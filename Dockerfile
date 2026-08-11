@@ -1,17 +1,19 @@
-# Use a lightweight nginx image to serve static files
+FROM nginx:alpine
 
-FROM nginx:alpine AS runtime
+# Remove default nginx config and replace with one that reads $PORT
+RUN rm /etc/nginx/conf.d/default.conf
 
-# Copy static assets into nginx's html directory
-COPY . /usr/share/nginx/html
+# Custom nginx config that listens on the $PORT environment variable
+# Cloud Run sets $PORT (default 8080)
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Expose the port that Cloud Run expects (default $PORT but nginx listens on 80)
-# Cloud Run will map the $PORT env var to the container's port – we use a simple trick via env substitution
-ENV PORT 8080
+# Copy all static app files into the nginx html directory
+COPY index.html /usr/share/nginx/html/
+COPY css/ /usr/share/nginx/html/css/
+COPY js/ /usr/share/nginx/html/js/
+COPY assets/ /usr/share/nginx/html/assets/
+COPY manifest.json /usr/share/nginx/html/
+COPY Olivia-Regular.ttf /usr/share/nginx/html/
+
 EXPOSE 8080
-
-# Override nginx config to listen on $PORT (optional, default 80 works as Cloud Run forwards)
-# Here we just keep the default configuration which listens on 80.
-
-# No extra commands needed – container will start nginx in foreground
 CMD ["nginx", "-g", "daemon off;"]
