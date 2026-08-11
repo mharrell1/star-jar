@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# ngrok binary
+ngrok
+
+# temp files
+*.zip
+/tmp/
+
+# Node
+node_modules/
+
+# Temp media / scratch
+.tempmediaStorage/

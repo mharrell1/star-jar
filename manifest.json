@@ -1,0 +1,22 @@
+{
+  "name": "StarJar — Origami Activity & Creativity Jar",
+  "short_name": "StarJar",
+  "description": "Fold stars for your creative and productive activities and shake the jar for inspiration.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0a0b1e",
+  "theme_color": "#0a0b1e",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "assets/stars/star_pink.png",
+      "sizes": "150x150",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/stars/star_purple.png",
+      "sizes": "150x150",
+      "type": "image/png"
+    }
+  ]
+}
