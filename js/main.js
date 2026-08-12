@@ -837,26 +837,39 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  authForm.addEventListener('submit', (e) => {
+  authForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = document.getElementById('authEmail').value;
     const password = document.getElementById('authPassword').value;
     const name = document.getElementById('authName').value;
 
+    authSubmitBtn.disabled = true;
+    authSubmitBtn.textContent = 'Syncing...';
+
     try {
       if (isSignUpMode) {
-        storage.registerUser(email, password, name);
-        showToast(`Welcome, ${name || email}! Account created & synced.`);
+        await storage.registerUser(email, password, name);
+        showToast(`Welcome, ${name || email}! Account created & synced to cloud.`);
       } else {
-        storage.loginUser(email, password);
-        showToast(`Welcome back! Data synced.`);
+        await storage.loginUser(email, password);
+        showToast(`Welcome back! Imported progress across devices.`);
       }
       refreshJarAndUI();
       authForm.reset();
+      updateAccountUI();
     } catch (err) {
       showToast(err.message || 'Authentication error.');
+    } finally {
+      authSubmitBtn.disabled = false;
+      authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Log In';
     }
   });
+
+  // Perform background cloud sync on app initialization
+  storage.syncFromCloudOnStartup().then(() => {
+    refreshJarAndUI();
+    updateAccountUI();
+  }).catch(() => {});
 
   document.getElementById('logoutBtn').addEventListener('click', () => {
     storage.logout();

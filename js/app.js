@@ -161,7 +161,7 @@ class StorageService {
     this.triggerSync();
   }
 
-  // User Accounts & Authentication (Local + Cloud Simulation)
+  // User Accounts & Authentication (Local + Cloud API Sync)
   getCurrentUser() {
     try {
       const user = localStorage.getItem(STORAGE_KEYS.USER);
@@ -180,7 +180,63 @@ class StorageService {
     }
   }
 
-  registerUser(email, password, name) {
+  saveLocalAccount(user, password, activities = null, history = null) {
+    const accounts = this.getRegisteredAccounts();
+    const idx = accounts.findIndex(acc => acc.email.toLowerCase() === user.email.toLowerCase());
+    const accData = {
+      id: user.id || 'usr-' + Date.now(),
+      email: user.email.trim(),
+      password: password || (idx !== -1 ? accounts[idx].password : ''),
+      name: user.name || user.email.split('@')[0],
+      createdAt: user.createdAt || new Date().toISOString(),
+      activities: activities || user.activities || this.getActivities(),
+      history: history || user.history || this.getHistory()
+    };
+
+    if (idx !== -1) {
+      accounts[idx] = accData;
+    } else {
+      accounts.push(accData);
+    }
+    localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
+  }
+
+  async registerUser(email, password, name) {
+    const cleanEmail = email.trim();
+    const cleanName = name.trim() || cleanEmail.split('@')[0];
+    const currentActivities = this.getActivities();
+    const currentHistory = this.getHistory();
+
+    try {
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          password,
+          name: cleanName,
+          activities: currentActivities,
+          history: currentHistory
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to create account.');
+      }
+
+      const user = data.user;
+      this.setCurrentUser({ ...user, password });
+      this.saveLocalAccount(user, password, user.activities, user.history);
+      return user;
+    } catch (err) {
+      if (err.message.includes('already exists')) {
+        throw err;
+      }
+      return this.registerUserLocal(cleanEmail, password, cleanName);
+    }
+  }
+
+  registerUserLocal(email, password, name) {
     const accounts = this.getRegisteredAccounts();
     if (accounts.some(acc => acc.email.toLowerCase() === email.toLowerCase())) {
       throw new Error('An account with this email already exists.');
@@ -188,7 +244,7 @@ class StorageService {
     const newUser = {
       id: 'usr-' + Date.now(),
       email: email.trim(),
-      password, // in real cloud apps, hashed on server
+      password,
       name: name.trim() || email.split('@')[0],
       createdAt: new Date().toISOString(),
       activities: this.getActivities(),
@@ -200,7 +256,41 @@ class StorageService {
     return newUser;
   }
 
-  loginUser(email, password) {
+  async loginUser(email, password) {
+    const cleanEmail = email.trim();
+
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, password })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Invalid email or password.');
+      }
+
+      const user = data.user;
+      this.setCurrentUser({ ...user, password });
+      
+      if (user.activities && Array.isArray(user.activities)) {
+        localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(user.activities));
+      }
+      if (user.history && Array.isArray(user.history)) {
+        localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(user.history));
+      }
+
+      this.saveLocalAccount(user, password, user.activities, user.history);
+      return user;
+    } catch (err) {
+      if (err.message.includes('Invalid email or password')) {
+        throw err;
+      }
+      return this.loginUserLocal(cleanEmail, password);
+    }
+  }
+
+  loginUserLocal(email, password) {
     const accounts = this.getRegisteredAccounts();
     const found = accounts.find(
       acc => acc.email.toLowerCase() === email.toLowerCase() && acc.password === password
@@ -208,7 +298,6 @@ class StorageService {
     if (!found) {
       throw new Error('Invalid email or password.');
     }
-    // Load their cloud data
     if (found.activities) {
       localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(found.activities));
     }
@@ -224,6 +313,7 @@ class StorageService {
       id: user.id,
       email: user.email,
       name: user.name,
+      password: user.password,
       loggedInAt: new Date().toISOString()
     };
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(session));
@@ -233,17 +323,53 @@ class StorageService {
     localStorage.removeItem(STORAGE_KEYS.USER);
   }
 
-  triggerSync() {
+  async triggerSync() {
     const user = this.getCurrentUser();
-    if (user) {
-      const accounts = this.getRegisteredAccounts();
-      const idx = accounts.findIndex(acc => acc.id === user.id);
-      if (idx !== -1) {
-        accounts[idx].activities = this.getActivities();
-        accounts[idx].history = this.getHistory();
-        accounts[idx].lastSynced = new Date().toISOString();
-        localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
+    if (!user) return;
+
+    const activities = this.getActivities();
+    const history = this.getHistory();
+
+    this.saveLocalAccount(user, user.password, activities, history);
+
+    try {
+      await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: user.id,
+          email: user.email,
+          password: user.password,
+          name: user.name,
+          activities,
+          history
+        })
+      });
+    } catch (e) {
+      console.warn('Cloud sync background warning:', e);
+    }
+  }
+
+  async syncFromCloudOnStartup() {
+    const user = this.getCurrentUser();
+    if (!user || !user.email) return;
+
+    try {
+      const res = await fetch(`/api/user?email=${encodeURIComponent(user.email)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          if (data.user.activities && Array.isArray(data.user.activities)) {
+            localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(data.user.activities));
+          }
+          if (data.user.history && Array.isArray(data.user.history)) {
+            localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(data.user.history));
+          }
+          this.saveLocalAccount(data.user, user.password, data.user.activities, data.user.history);
+        }
       }
+    } catch (e) {
+      console.warn('Startup cloud sync warning:', e);
     }
   }
 }
@@ -1469,26 +1595,39 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  authForm.addEventListener('submit', (e) => {
+  authForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = document.getElementById('authEmail').value;
     const password = document.getElementById('authPassword').value;
     const name = document.getElementById('authName').value;
 
+    authSubmitBtn.disabled = true;
+    authSubmitBtn.textContent = 'Syncing...';
+
     try {
       if (isSignUpMode) {
-        storage.registerUser(email, password, name);
-        showToast(`Welcome, ${name || email}! Account created & synced.`);
+        await storage.registerUser(email, password, name);
+        showToast(`Welcome, ${name || email}! Account created & synced to cloud.`);
       } else {
-        storage.loginUser(email, password);
-        showToast(`Welcome back! Data synced.`);
+        await storage.loginUser(email, password);
+        showToast(`Welcome back! Imported progress across devices.`);
       }
       refreshJarAndUI();
       authForm.reset();
+      updateAccountUI();
     } catch (err) {
       showToast(err.message || 'Authentication error.');
+    } finally {
+      authSubmitBtn.disabled = false;
+      authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Log In';
     }
   });
+
+  // Perform background cloud sync on app initialization
+  storage.syncFromCloudOnStartup().then(() => {
+    refreshJarAndUI();
+    updateAccountUI();
+  }).catch(() => {});
 
   document.getElementById('logoutBtn').addEventListener('click', () => {
     storage.logout();
