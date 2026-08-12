@@ -12,6 +12,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const userAccountLabel = document.getElementById('userAccountLabel');
   const loggedInView = document.getElementById('loggedInView');
   const loggedOutView = document.getElementById('loggedOutView');
+  const syncStatusText = document.getElementById('syncStatusText');
+  const manualSyncBtn = document.getElementById('manualSyncBtn');
   
   // Desktop Add Form
   const addForm = document.getElementById('addActivityForm');
@@ -110,6 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function showToast(message) {
     const container = document.getElementById('toastContainer');
+    if (!container) return;
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.textContent = message;
@@ -353,30 +356,77 @@ document.addEventListener('DOMContentLoaded', () => {
 
     openTaskModal(selected);
   }
+
   // --------------------------------------------------------------------------
-  // Mobile / iPhone Shake Sensor Integration (High-Sensitivity Energy Engine)
+  // Mobile Shake Sensor (Noise-Gated Directional Reversal Engine)
   // --------------------------------------------------------------------------
   let lastX = null, lastY = null, lastZ = null;
+  let lastDeltaX = 0, lastDeltaY = 0, lastDeltaZ = 0;
   let accumulatedMotion = 0;
   let lastDrawTime = 0;
   let motionPermissionGranted = false;
+  let lastFormInteractionTime = 0;
+  let reversalCount = 0;
+  let lastReversalTime = 0;
 
-  // Ultra-responsive energy threshold: senses gentle up/down & omnidirectional motion
-  const MOTION_TRIGGER_ENERGY = 1.4;  // Low threshold — gentle rocking triggers draw
-  const MOTION_DECAY = 0.94;          // Slow decay — energy builds up quickly across frames
-  const DRAW_COOLDOWN_MS = 2000;      // 2.0s cooldown between draws
+  // Calibrated thresholds for physical phone shake without false triggers from typing:
+  const MIN_DELTA_NOISE_GATE = 4.2;   // Discard sub-4.2 m/s² micro-deltas (typing/tapping noise)
+  const MOTION_TRIGGER_ENERGY = 16.0; // Requires firm deliberate shaking energy
+  const MOTION_DECAY = 0.78;          // Fast energy decay
+  const DRAW_COOLDOWN_MS = 2500;      // 2.5s cooldown after a draw
 
   const mobileSensorPill = document.getElementById('mobileSensorPill');
   const motionPermissionBtn = document.getElementById('requestMotionPermissionBtn');
 
+  // Typing & Form interaction tracking to suppress shake false triggers
+  function updateFormInteractionLock() {
+    lastFormInteractionTime = Date.now();
+    accumulatedMotion = 0;
+    reversalCount = 0;
+    lastX = null;
+    lastY = null;
+    lastZ = null;
+  }
+
+  document.addEventListener('focusin', updateFormInteractionLock, { passive: true });
+  document.addEventListener('focusout', updateFormInteractionLock, { passive: true });
+  document.addEventListener('input', updateFormInteractionLock, { passive: true });
+  document.addEventListener('keydown', updateFormInteractionLock, { passive: true });
+  document.addEventListener('keyup', updateFormInteractionLock, { passive: true });
+
+  document.querySelectorAll('input, textarea, select, form, .chip, .type-toggle-btn').forEach(el => {
+    el.addEventListener('touchstart', updateFormInteractionLock, { passive: true });
+    el.addEventListener('pointerdown', updateFormInteractionLock, { passive: true });
+  });
+
+  function isMotionSuppressed() {
+    // 1. Cooldown or jar currently animating
+    if (jarEngine.isShaking || (Date.now() - lastDrawTime < DRAW_COOLDOWN_MS)) return true;
+
+    // 2. Active input/textarea focus
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT' || activeEl.isContentEditable)) {
+      return true;
+    }
+
+    // 3. User typed or interacted with form controls within last 2.5 seconds
+    if (Date.now() - lastFormInteractionTime < 2500) {
+      return true;
+    }
+
+    // 4. Any modal or side drawer is currently visible
+    const openModalOrDrawer = document.querySelector('.modal-overlay.active, .drawer.active');
+    if (openModalOrDrawer) {
+      return true;
+    }
+
+    return false;
+  }
+
   function handleDeviceMotion(event) {
-    // If ANY modal is open or jar is shaking or in cooldown, ignore motion completely
-    const anyModalOpen = taskModal.classList.contains('active') ||
-        resolutionModal.classList.contains('active') ||
-        (document.getElementById('mobileAddModalOverlay') && document.getElementById('mobileAddModalOverlay').classList.contains('active')) ||
-        (document.getElementById('editModalOverlay') && document.getElementById('editModalOverlay').classList.contains('active'));
-    if (anyModalOpen || jarEngine.isShaking || Date.now() - lastDrawTime < DRAW_COOLDOWN_MS) {
+    if (isMotionSuppressed()) {
       accumulatedMotion = 0;
+      reversalCount = 0;
       lastX = null;
       lastY = null;
       lastZ = null;
@@ -391,6 +441,7 @@ document.addEventListener('DOMContentLoaded', () => {
       lastY = current.y;
       lastZ = current.z;
       accumulatedMotion = 0;
+      reversalCount = 0;
       return;
     }
 
@@ -402,15 +453,42 @@ document.addEventListener('DOMContentLoaded', () => {
     lastY = current.y;
     lastZ = current.z;
 
-    // 3D delta magnitude for this frame (with extra vertical boost for up/down motion)
-    const frameMag = Math.hypot(deltaX, deltaY * 1.25, deltaZ);
+    const frameMag = Math.hypot(deltaX, deltaY * 1.15, deltaZ);
 
-    // Accumulate motion energy with smooth exponential decay
+    // NOISE GATE: Discard frame if delta is below threshold
+    if (frameMag < MIN_DELTA_NOISE_GATE) {
+      accumulatedMotion *= MOTION_DECAY;
+      if (accumulatedMotion < 0.2) accumulatedMotion = 0;
+      if (Date.now() - lastReversalTime > 700) reversalCount = 0;
+      return;
+    }
+
+    // Check for directional reversals (sign changes in acceleration delta)
+    const now = Date.now();
+    const isReversalX = (deltaX > 2.5 && lastDeltaX < -2.5) || (deltaX < -2.5 && lastDeltaX > 2.5);
+    const isReversalY = (deltaY > 2.5 && lastDeltaY < -2.5) || (deltaY < -2.5 && lastDeltaY > 2.5);
+    const isReversalZ = (deltaZ > 2.5 && lastDeltaZ < -2.5) || (deltaZ < -2.5 && lastDeltaZ > 2.5);
+
+    if (isReversalX || isReversalY || isReversalZ) {
+      if (now - lastReversalTime < 650) {
+        reversalCount++;
+      } else {
+        reversalCount = 1;
+      }
+      lastReversalTime = now;
+    }
+
+    lastDeltaX = deltaX;
+    lastDeltaY = deltaY;
+    lastDeltaZ = deltaZ;
+
+    // Accumulate motion energy with fast decay
     accumulatedMotion = (accumulatedMotion * MOTION_DECAY) + frameMag;
 
-    // Trigger draw as soon as active movement energy builds up
-    if (accumulatedMotion > MOTION_TRIGGER_ENERGY) {
+    // Trigger draw ONLY if energy threshold is reached AND at least 2 directional reversals detected
+    if (accumulatedMotion >= MOTION_TRIGGER_ENERGY && reversalCount >= 2) {
       accumulatedMotion = 0;
+      reversalCount = 0;
       lastDrawTime = Date.now();
       lastX = null;
       lastY = null;
@@ -817,6 +895,9 @@ document.addEventListener('DOMContentLoaded', () => {
       loggedInView.style.display = 'block';
       document.getElementById('profileName').textContent = user.name;
       document.getElementById('profileEmail').textContent = user.email;
+      if (syncStatusText) {
+        syncStatusText.textContent = storage.getLastSyncedText();
+      }
     } else {
       userAccountLabel.textContent = 'Account';
       loggedOutView.style.display = 'block';
@@ -865,11 +946,74 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Perform background cloud sync on app initialization
-  storage.syncFromCloudOnStartup().then(() => {
+  if (manualSyncBtn) {
+    manualSyncBtn.addEventListener('click', async () => {
+      manualSyncBtn.disabled = true;
+      manualSyncBtn.innerHTML = '<span>☁️ Syncing...</span>';
+      try {
+        const res = await storage.syncFromCloud();
+        if (res.success) {
+          refreshJarAndUI();
+          updateAccountUI();
+          showToast(`✓ Cloud sync complete (${res.activitiesCount} stars)!`);
+        } else {
+          showToast('Sync failed: ' + (res.error || 'Server error'));
+        }
+      } catch (err) {
+        showToast('Sync failed: ' + err.message);
+      } finally {
+        manualSyncBtn.disabled = false;
+        manualSyncBtn.innerHTML = '<span>☁️ Sync with Cloud Now</span>';
+      }
+    });
+  }
+
+  // Cross-device auto-sync hooks
+  storage.addSyncListener(() => {
     refreshJarAndUI();
     updateAccountUI();
+  });
+
+  // 1. On startup
+  storage.syncFromCloud().then((res) => {
+    if (res && res.success) {
+      refreshJarAndUI();
+      updateAccountUI();
+    }
   }).catch(() => {});
+
+  // 2. When user switches back to this browser tab / device
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      storage.syncFromCloud().then((res) => {
+        if (res && res.success) {
+          refreshJarAndUI();
+          updateAccountUI();
+        }
+      }).catch(() => {});
+    }
+  });
+
+  window.addEventListener('focus', () => {
+    storage.syncFromCloud().then((res) => {
+      if (res && res.success) {
+        refreshJarAndUI();
+        updateAccountUI();
+      }
+    }).catch(() => {});
+  });
+
+  // 3. Periodic background sync every 60s
+  setInterval(() => {
+    if (storage.getCurrentUser()) {
+      storage.syncFromCloud().then((res) => {
+        if (res && res.success) {
+          refreshJarAndUI();
+          updateAccountUI();
+        }
+      }).catch(() => {});
+    }
+  }, 60000);
 
   document.getElementById('logoutBtn').addEventListener('click', () => {
     storage.logout();

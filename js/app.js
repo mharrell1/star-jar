@@ -1,15 +1,16 @@
-// StarJar — Bundled App
+// StarJar — Bundled App (Safari & Cross-Platform Compatible)
 /**
  * storage.js
  * Manages local storage persistence, activity items, completion history,
- * user authentication state, and cloud sync hooks.
+ * user authentication state, intelligent cross-device merging, and cloud sync hooks.
  */
 
 const STORAGE_KEYS = {
   ACTIVITIES: 'starjar_activities',
   HISTORY: 'starjar_history',
   USER: 'starjar_user',
-  ACCOUNTS: 'starjar_accounts_db'
+  ACCOUNTS: 'starjar_accounts_db',
+  LAST_SYNCED: 'starjar_last_synced'
 };
 
 // Default sample activities to populate jar if empty
@@ -72,6 +73,7 @@ const DEFAULT_ACTIVITIES = [
 
 class StorageService {
   constructor() {
+    this.syncListeners = [];
     this.initStorage();
   }
 
@@ -161,6 +163,59 @@ class StorageService {
     this.triggerSync();
   }
 
+  // Helper to check if activities list is only the initial default sample set
+  isDefaultSampleList(list) {
+    if (!Array.isArray(list) || list.length === 0) return true;
+    if (list.length !== DEFAULT_ACTIVITIES.length) return false;
+    return list.every((item, i) => item.id === DEFAULT_ACTIVITIES[i].id);
+  }
+
+  // Intelligent Merge Helpers (Preserves local custom stars when logging in)
+  mergeActivities(localList, cloudList) {
+    if (!cloudList || !Array.isArray(cloudList) || cloudList.length === 0) {
+      return localList || [];
+    }
+    if (!localList || !Array.isArray(localList) || localList.length === 0 || this.isDefaultSampleList(localList)) {
+      return cloudList;
+    }
+
+    const merged = [...cloudList];
+    const cloudTitles = new Set(cloudList.map(a => (a.title || '').trim().toLowerCase()));
+    const cloudIds = new Set(cloudList.map(a => a.id));
+
+    for (const localItem of localList) {
+      // Don't merge generic sample stars into established cloud account
+      if (localItem.id && String(localItem.id).startsWith('sample-')) continue;
+      const cleanTitle = (localItem.title || '').trim().toLowerCase();
+      if (!cloudTitles.has(cleanTitle) && !cloudIds.has(localItem.id)) {
+        merged.push(localItem);
+        cloudTitles.add(cleanTitle);
+        cloudIds.add(localItem.id);
+      }
+    }
+    return merged;
+  }
+
+  mergeHistory(localHist, cloudHist) {
+    if (!cloudHist || !Array.isArray(cloudHist) || cloudHist.length === 0) {
+      return localHist || [];
+    }
+    if (!localHist || !Array.isArray(localHist) || localHist.length === 0) {
+      return cloudHist;
+    }
+
+    const merged = [...cloudHist];
+    const seenIds = new Set(cloudHist.map(h => h.id));
+
+    for (const localEntry of localHist) {
+      if (!seenIds.has(localEntry.id)) {
+        merged.push(localEntry);
+        seenIds.add(localEntry.id);
+      }
+    }
+    return merged;
+  }
+
   // User Accounts & Authentication (Local + Cloud API Sync)
   getCurrentUser() {
     try {
@@ -182,12 +237,13 @@ class StorageService {
 
   saveLocalAccount(user, password, activities = null, history = null) {
     const accounts = this.getRegisteredAccounts();
-    const idx = accounts.findIndex(acc => acc.email.toLowerCase() === user.email.toLowerCase());
+    const cleanEmail = (user.email || '').trim().toLowerCase();
+    const idx = accounts.findIndex(acc => (acc.email || '').toLowerCase() === cleanEmail);
     const accData = {
       id: user.id || 'usr-' + Date.now(),
-      email: user.email.trim(),
+      email: cleanEmail,
       password: password || (idx !== -1 ? accounts[idx].password : ''),
-      name: user.name || user.email.split('@')[0],
+      name: user.name || cleanEmail.split('@')[0],
       createdAt: user.createdAt || new Date().toISOString(),
       activities: activities || user.activities || this.getActivities(),
       history: history || user.history || this.getHistory()
@@ -202,117 +258,75 @@ class StorageService {
   }
 
   async registerUser(email, password, name) {
-    const cleanEmail = email.trim();
+    const cleanEmail = email.trim().toLowerCase();
     const cleanName = name.trim() || cleanEmail.split('@')[0];
     const currentActivities = this.getActivities();
     const currentHistory = this.getHistory();
 
-    try {
-      const res = await fetch('/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: cleanEmail,
-          password,
-          name: cleanName,
-          activities: currentActivities,
-          history: currentHistory
-        })
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || 'Failed to create account.');
-      }
-
-      const user = data.user;
-      this.setCurrentUser({ ...user, password });
-      this.saveLocalAccount(user, password, user.activities, user.history);
-      return user;
-    } catch (err) {
-      if (err.message.includes('already exists')) {
-        throw err;
-      }
-      return this.registerUserLocal(cleanEmail, password, cleanName);
+    const res = await fetch('/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: cleanEmail,
+        password,
+        name: cleanName,
+        activities: currentActivities,
+        history: currentHistory
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      throw new Error(data.error || 'Failed to create account.');
     }
-  }
 
-  registerUserLocal(email, password, name) {
-    const accounts = this.getRegisteredAccounts();
-    if (accounts.some(acc => acc.email.toLowerCase() === email.toLowerCase())) {
-      throw new Error('An account with this email already exists.');
-    }
-    const newUser = {
-      id: 'usr-' + Date.now(),
-      email: email.trim(),
-      password,
-      name: name.trim() || email.split('@')[0],
-      createdAt: new Date().toISOString(),
-      activities: this.getActivities(),
-      history: this.getHistory()
-    };
-    accounts.push(newUser);
-    localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
-    this.setCurrentUser(newUser);
-    return newUser;
+    const user = data.user;
+    this.setCurrentUser({ ...user, password });
+    this.saveLocalAccount(user, password, user.activities, user.history);
+    this.setLastSynced(Date.now());
+    return user;
   }
 
   async loginUser(email, password) {
-    const cleanEmail = email.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const currentLocalActivities = this.getActivities();
+    const currentLocalHistory = this.getHistory();
 
-    try {
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, password })
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || 'Invalid email or password.');
-      }
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: cleanEmail, password })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      throw new Error(data.error || 'Invalid email or password.');
+    }
 
-      const user = data.user;
-      this.setCurrentUser({ ...user, password });
-      
-      if (user.activities && Array.isArray(user.activities)) {
-        localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(user.activities));
-      }
-      if (user.history && Array.isArray(user.history)) {
-        localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(user.history));
-      }
+    const user = data.user;
+    const cloudActivities = user.activities || [];
+    const cloudHistory = user.history || [];
 
-      this.saveLocalAccount(user, password, user.activities, user.history);
-      return user;
-    } catch (err) {
-      if (err.message.includes('Invalid email or password')) {
-        throw err;
-      }
-      return this.loginUserLocal(cleanEmail, password);
-    }
-  }
+    // Intelligently merge any local custom stars with cloud stars
+    const mergedActivities = this.mergeActivities(currentLocalActivities, cloudActivities);
+    const mergedHistory = this.mergeHistory(currentLocalHistory, cloudHistory);
 
-  loginUserLocal(email, password) {
-    const accounts = this.getRegisteredAccounts();
-    const found = accounts.find(
-      acc => acc.email.toLowerCase() === email.toLowerCase() && acc.password === password
-    );
-    if (!found) {
-      throw new Error('Invalid email or password.');
+    localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(mergedActivities));
+    localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(mergedHistory));
+    this.setCurrentUser({ ...user, password });
+    this.saveLocalAccount(user, password, mergedActivities, mergedHistory);
+    this.setLastSynced(Date.now());
+
+    // If local device had extra custom stars, push merged set to cloud immediately
+    if (mergedActivities.length !== cloudActivities.length || mergedHistory.length !== cloudHistory.length) {
+      await this.triggerSync();
     }
-    if (found.activities) {
-      localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(found.activities));
-    }
-    if (found.history) {
-      localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(found.history));
-    }
-    this.setCurrentUser(found);
-    return found;
+    return user;
   }
 
   setCurrentUser(user) {
     const session = {
       id: user.id,
-      email: user.email,
-      name: user.name,
+      email: (user.email || '').trim().toLowerCase(),
+      name: user.name || (user.email || '').split('@')[0],
       password: user.password,
       loggedInAt: new Date().toISOString()
     };
@@ -321,11 +335,12 @@ class StorageService {
 
   logout() {
     localStorage.removeItem(STORAGE_KEYS.USER);
+    localStorage.removeItem(STORAGE_KEYS.LAST_SYNCED);
   }
 
   async triggerSync() {
     const user = this.getCurrentUser();
-    if (!user) return;
+    if (!user || !user.email) return;
 
     const activities = this.getActivities();
     const history = this.getHistory();
@@ -333,7 +348,7 @@ class StorageService {
     this.saveLocalAccount(user, user.password, activities, history);
 
     try {
-      await fetch('/api/sync', {
+      const res = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -345,34 +360,78 @@ class StorageService {
           history
         })
       });
+      if (res.ok) {
+        this.setLastSynced(Date.now());
+      }
     } catch (e) {
       console.warn('Cloud sync background warning:', e);
     }
   }
 
-  async syncFromCloudOnStartup() {
+  // Cross-device automatic sync from cloud
+  async syncFromCloud() {
     const user = this.getCurrentUser();
-    if (!user || !user.email) return;
+    if (!user || !user.email) return { success: false, reason: 'not_logged_in' };
 
     try {
       const res = await fetch(`/api/user?email=${encodeURIComponent(user.email)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.user) {
-          if (data.user.activities && Array.isArray(data.user.activities)) {
-            localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(data.user.activities));
-          }
-          if (data.user.history && Array.isArray(data.user.history)) {
-            localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(data.user.history));
-          }
-          this.saveLocalAccount(data.user, user.password, data.user.activities, data.user.history);
-        }
+      if (!res.ok) {
+        throw new Error('Failed to fetch user data from cloud.');
       }
-    } catch (e) {
-      console.warn('Startup cloud sync warning:', e);
+      const data = await res.json();
+      if (data.user) {
+        const cloudActivities = data.user.activities || [];
+        const cloudHistory = data.user.history || [];
+
+        localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(cloudActivities));
+        localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(cloudHistory));
+        this.saveLocalAccount(data.user, user.password, cloudActivities, cloudHistory);
+        this.setLastSynced(Date.now());
+        this.notifySyncListeners();
+        return { success: true, activitiesCount: cloudActivities.length, historyCount: cloudHistory.length };
+      }
+      return { success: false, reason: 'no_user_returned' };
+    } catch (err) {
+      console.warn('Cloud sync error:', err);
+      return { success: false, error: err.message };
     }
   }
+
+  getLastSynced() {
+    const ts = localStorage.getItem(STORAGE_KEYS.LAST_SYNCED);
+    return ts ? parseInt(ts, 10) : null;
+  }
+
+  setLastSynced(timestamp) {
+    localStorage.setItem(STORAGE_KEYS.LAST_SYNCED, timestamp.toString());
+  }
+
+  getLastSyncedText() {
+    const ts = this.getLastSynced();
+    if (!ts) return 'Active';
+    const diff = Math.floor((Date.now() - ts) / 1000);
+    if (diff < 10) return 'Synced just now';
+    if (diff < 60) return `Synced ${diff}s ago`;
+    const mins = Math.floor(diff / 60);
+    if (mins < 60) return `Synced ${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `Synced ${hours}h ago`;
+    return `Synced ${new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  }
+
+  addSyncListener(callback) {
+    if (typeof callback === 'function') {
+      this.syncListeners.push(callback);
+    }
+  }
+
+  notifySyncListeners() {
+    this.syncListeners.forEach(cb => {
+      try { cb(); } catch (e) { console.error('Sync listener error:', e); }
+    });
+  }
 }
+
 
 /**
  * jar.js
@@ -756,6 +815,7 @@ class JarEngine {
   }
 }
 
+
 /**
  * main.js
  * Application controller for StarJar: binds user interactions,
@@ -763,11 +823,15 @@ class JarEngine {
  */
 
 
+
+
 document.addEventListener('DOMContentLoaded', () => {
   // DOM Elements Declaration
   const userAccountLabel = document.getElementById('userAccountLabel');
   const loggedInView = document.getElementById('loggedInView');
   const loggedOutView = document.getElementById('loggedOutView');
+  const syncStatusText = document.getElementById('syncStatusText');
+  const manualSyncBtn = document.getElementById('manualSyncBtn');
   
   // Desktop Add Form
   const addForm = document.getElementById('addActivityForm');
@@ -783,7 +847,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const mobileTaskTimeInput = document.getElementById('mobileTaskTime');
   const closeMobileAddBtn = document.getElementById('closeMobileAddBtn');
   let isMobileAddType = 'creative';
-  let shakeCooldown = false;
 
   // Draw Activity Controls
   const drawTimeChips = document.querySelectorAll('#drawTimeChips .chip');
@@ -795,7 +858,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const popupTimeBadge = document.getElementById('popupTimeBadge');
   const popupTaskLink = document.getElementById('popupTaskLink');
   const resolutionModal = document.getElementById('resolutionModalOverlay');
-  const editModal = document.getElementById('editModalOverlay');
   
   // Drawers
   const historyDrawer = document.getElementById('historyDrawer');
@@ -838,6 +900,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let isDrawType = 'any';
   let selectedDrawTime = 30;
   let isSignUpMode = false;
+  let shakeCooldown = false;
 
   // Initialize Jar with saved activities
   function refreshJarAndUI() {
@@ -867,6 +930,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function showToast(message) {
     const container = document.getElementById('toastContainer');
+    if (!container) return;
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.textContent = message;
@@ -1110,32 +1174,77 @@ document.addEventListener('DOMContentLoaded', () => {
 
     openTaskModal(selected);
   }
+
   // --------------------------------------------------------------------------
-  // Mobile / iPhone Shake Sensor Integration (High-Sensitivity Energy Engine)
+  // Mobile Shake Sensor (Noise-Gated Directional Reversal Engine)
   // --------------------------------------------------------------------------
   let lastX = null, lastY = null, lastZ = null;
+  let lastDeltaX = 0, lastDeltaY = 0, lastDeltaZ = 0;
   let accumulatedMotion = 0;
   let lastDrawTime = 0;
   let motionPermissionGranted = false;
+  let lastFormInteractionTime = 0;
+  let reversalCount = 0;
+  let lastReversalTime = 0;
 
-  // Ultra-responsive energy threshold: senses gentle up/down & omnidirectional motion
-  const MOTION_TRIGGER_ENERGY = 1.4;  // Low threshold — gentle rocking triggers draw
-  const MOTION_DECAY = 0.94;          // Slow decay — energy builds up quickly across frames
-  const DRAW_COOLDOWN_MS = 2000;      // 2.0s cooldown between draws
+  // Calibrated thresholds for physical phone shake without false triggers from typing:
+  const MIN_DELTA_NOISE_GATE = 4.2;   // Discard sub-4.2 m/s² micro-deltas (typing/tapping noise)
+  const MOTION_TRIGGER_ENERGY = 16.0; // Requires firm deliberate shaking energy
+  const MOTION_DECAY = 0.78;          // Fast energy decay
+  const DRAW_COOLDOWN_MS = 2500;      // 2.5s cooldown after a draw
 
   const mobileSensorPill = document.getElementById('mobileSensorPill');
   const motionPermissionBtn = document.getElementById('requestMotionPermissionBtn');
 
-  function handleDeviceMotion(event) {
-    // If ANY modal is open or jar is shaking or in cooldown, or user is typing in a form input, ignore motion completely
+  // Typing & Form interaction tracking to suppress shake false triggers
+  function updateFormInteractionLock() {
+    lastFormInteractionTime = Date.now();
+    accumulatedMotion = 0;
+    reversalCount = 0;
+    lastX = null;
+    lastY = null;
+    lastZ = null;
+  }
+
+  document.addEventListener('focusin', updateFormInteractionLock, { passive: true });
+  document.addEventListener('focusout', updateFormInteractionLock, { passive: true });
+  document.addEventListener('input', updateFormInteractionLock, { passive: true });
+  document.addEventListener('keydown', updateFormInteractionLock, { passive: true });
+  document.addEventListener('keyup', updateFormInteractionLock, { passive: true });
+
+  document.querySelectorAll('input, textarea, select, form, .chip, .type-toggle-btn').forEach(el => {
+    el.addEventListener('touchstart', updateFormInteractionLock, { passive: true });
+    el.addEventListener('pointerdown', updateFormInteractionLock, { passive: true });
+  });
+
+  function isMotionSuppressed() {
+    // 1. Cooldown or jar currently animating
+    if (jarEngine.isShaking || (Date.now() - lastDrawTime < DRAW_COOLDOWN_MS)) return true;
+
+    // 2. Active input/textarea focus
     const activeEl = document.activeElement;
-    const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
-    const anyModalOpen = taskModal.classList.contains('active') ||
-        resolutionModal.classList.contains('active') ||
-        (mobileAddModal && mobileAddModal.classList.contains('active')) ||
-        (editModal && editModal.classList.contains('active'));
-    if (anyModalOpen || isTyping || jarEngine.isShaking || Date.now() - lastDrawTime < DRAW_COOLDOWN_MS) {
+    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT' || activeEl.isContentEditable)) {
+      return true;
+    }
+
+    // 3. User typed or interacted with form controls within last 2.5 seconds
+    if (Date.now() - lastFormInteractionTime < 2500) {
+      return true;
+    }
+
+    // 4. Any modal or side drawer is currently visible
+    const openModalOrDrawer = document.querySelector('.modal-overlay.active, .drawer.active');
+    if (openModalOrDrawer) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function handleDeviceMotion(event) {
+    if (isMotionSuppressed()) {
       accumulatedMotion = 0;
+      reversalCount = 0;
       lastX = null;
       lastY = null;
       lastZ = null;
@@ -1150,6 +1259,7 @@ document.addEventListener('DOMContentLoaded', () => {
       lastY = current.y;
       lastZ = current.z;
       accumulatedMotion = 0;
+      reversalCount = 0;
       return;
     }
 
@@ -1161,15 +1271,42 @@ document.addEventListener('DOMContentLoaded', () => {
     lastY = current.y;
     lastZ = current.z;
 
-    // 3D delta magnitude for this frame (with extra vertical boost for up/down motion)
-    const frameMag = Math.hypot(deltaX, deltaY * 1.25, deltaZ);
+    const frameMag = Math.hypot(deltaX, deltaY * 1.15, deltaZ);
 
-    // Accumulate motion energy with smooth exponential decay
+    // NOISE GATE: Discard frame if delta is below threshold
+    if (frameMag < MIN_DELTA_NOISE_GATE) {
+      accumulatedMotion *= MOTION_DECAY;
+      if (accumulatedMotion < 0.2) accumulatedMotion = 0;
+      if (Date.now() - lastReversalTime > 700) reversalCount = 0;
+      return;
+    }
+
+    // Check for directional reversals (sign changes in acceleration delta)
+    const now = Date.now();
+    const isReversalX = (deltaX > 2.5 && lastDeltaX < -2.5) || (deltaX < -2.5 && lastDeltaX > 2.5);
+    const isReversalY = (deltaY > 2.5 && lastDeltaY < -2.5) || (deltaY < -2.5 && lastDeltaY > 2.5);
+    const isReversalZ = (deltaZ > 2.5 && lastDeltaZ < -2.5) || (deltaZ < -2.5 && lastDeltaZ > 2.5);
+
+    if (isReversalX || isReversalY || isReversalZ) {
+      if (now - lastReversalTime < 650) {
+        reversalCount++;
+      } else {
+        reversalCount = 1;
+      }
+      lastReversalTime = now;
+    }
+
+    lastDeltaX = deltaX;
+    lastDeltaY = deltaY;
+    lastDeltaZ = deltaZ;
+
+    // Accumulate motion energy with fast decay
     accumulatedMotion = (accumulatedMotion * MOTION_DECAY) + frameMag;
 
-    // Trigger draw as soon as active movement energy builds up
-    if (accumulatedMotion > MOTION_TRIGGER_ENERGY) {
+    // Trigger draw ONLY if energy threshold is reached AND at least 2 directional reversals detected
+    if (accumulatedMotion >= MOTION_TRIGGER_ENERGY && reversalCount >= 2) {
       accumulatedMotion = 0;
+      reversalCount = 0;
       lastDrawTime = Date.now();
       lastX = null;
       lastY = null;
@@ -1576,6 +1713,9 @@ document.addEventListener('DOMContentLoaded', () => {
       loggedInView.style.display = 'block';
       document.getElementById('profileName').textContent = user.name;
       document.getElementById('profileEmail').textContent = user.email;
+      if (syncStatusText) {
+        syncStatusText.textContent = storage.getLastSyncedText();
+      }
     } else {
       userAccountLabel.textContent = 'Account';
       loggedOutView.style.display = 'block';
@@ -1624,11 +1764,74 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Perform background cloud sync on app initialization
-  storage.syncFromCloudOnStartup().then(() => {
+  if (manualSyncBtn) {
+    manualSyncBtn.addEventListener('click', async () => {
+      manualSyncBtn.disabled = true;
+      manualSyncBtn.innerHTML = '<span>☁️ Syncing...</span>';
+      try {
+        const res = await storage.syncFromCloud();
+        if (res.success) {
+          refreshJarAndUI();
+          updateAccountUI();
+          showToast(`✓ Cloud sync complete (${res.activitiesCount} stars)!`);
+        } else {
+          showToast('Sync failed: ' + (res.error || 'Server error'));
+        }
+      } catch (err) {
+        showToast('Sync failed: ' + err.message);
+      } finally {
+        manualSyncBtn.disabled = false;
+        manualSyncBtn.innerHTML = '<span>☁️ Sync with Cloud Now</span>';
+      }
+    });
+  }
+
+  // Cross-device auto-sync hooks
+  storage.addSyncListener(() => {
     refreshJarAndUI();
     updateAccountUI();
+  });
+
+  // 1. On startup
+  storage.syncFromCloud().then((res) => {
+    if (res && res.success) {
+      refreshJarAndUI();
+      updateAccountUI();
+    }
   }).catch(() => {});
+
+  // 2. When user switches back to this browser tab / device
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      storage.syncFromCloud().then((res) => {
+        if (res && res.success) {
+          refreshJarAndUI();
+          updateAccountUI();
+        }
+      }).catch(() => {});
+    }
+  });
+
+  window.addEventListener('focus', () => {
+    storage.syncFromCloud().then((res) => {
+      if (res && res.success) {
+        refreshJarAndUI();
+        updateAccountUI();
+      }
+    }).catch(() => {});
+  });
+
+  // 3. Periodic background sync every 60s
+  setInterval(() => {
+    if (storage.getCurrentUser()) {
+      storage.syncFromCloud().then((res) => {
+        if (res && res.success) {
+          refreshJarAndUI();
+          updateAccountUI();
+        }
+      }).catch(() => {});
+    }
+  }, 60000);
 
   document.getElementById('logoutBtn').addEventListener('click', () => {
     storage.logout();
@@ -1641,3 +1844,4 @@ document.addEventListener('DOMContentLoaded', () => {
     return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   }
 });
+

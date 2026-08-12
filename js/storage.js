@@ -1,18 +1,19 @@
 /**
  * storage.js
  * Manages local storage persistence, activity items, completion history,
- * user authentication state, and cloud sync hooks.
+ * user authentication state, intelligent cross-device merging, and cloud sync hooks.
  */
 
-const STORAGE_KEYS = {
+export const STORAGE_KEYS = {
   ACTIVITIES: 'starjar_activities',
   HISTORY: 'starjar_history',
   USER: 'starjar_user',
-  ACCOUNTS: 'starjar_accounts_db'
+  ACCOUNTS: 'starjar_accounts_db',
+  LAST_SYNCED: 'starjar_last_synced'
 };
 
 // Default sample activities to populate jar if empty
-const DEFAULT_ACTIVITIES = [
+export const DEFAULT_ACTIVITIES = [
   {
     id: 'sample-1',
     title: 'Sketch a cozy dream room',
@@ -71,6 +72,7 @@ const DEFAULT_ACTIVITIES = [
 
 export class StorageService {
   constructor() {
+    this.syncListeners = [];
     this.initStorage();
   }
 
@@ -160,6 +162,59 @@ export class StorageService {
     this.triggerSync();
   }
 
+  // Helper to check if activities list is only the initial default sample set
+  isDefaultSampleList(list) {
+    if (!Array.isArray(list) || list.length === 0) return true;
+    if (list.length !== DEFAULT_ACTIVITIES.length) return false;
+    return list.every((item, i) => item.id === DEFAULT_ACTIVITIES[i].id);
+  }
+
+  // Intelligent Merge Helpers (Preserves local custom stars when logging in)
+  mergeActivities(localList, cloudList) {
+    if (!cloudList || !Array.isArray(cloudList) || cloudList.length === 0) {
+      return localList || [];
+    }
+    if (!localList || !Array.isArray(localList) || localList.length === 0 || this.isDefaultSampleList(localList)) {
+      return cloudList;
+    }
+
+    const merged = [...cloudList];
+    const cloudTitles = new Set(cloudList.map(a => (a.title || '').trim().toLowerCase()));
+    const cloudIds = new Set(cloudList.map(a => a.id));
+
+    for (const localItem of localList) {
+      // Don't merge generic sample stars into established cloud account
+      if (localItem.id && String(localItem.id).startsWith('sample-')) continue;
+      const cleanTitle = (localItem.title || '').trim().toLowerCase();
+      if (!cloudTitles.has(cleanTitle) && !cloudIds.has(localItem.id)) {
+        merged.push(localItem);
+        cloudTitles.add(cleanTitle);
+        cloudIds.add(localItem.id);
+      }
+    }
+    return merged;
+  }
+
+  mergeHistory(localHist, cloudHist) {
+    if (!cloudHist || !Array.isArray(cloudHist) || cloudHist.length === 0) {
+      return localHist || [];
+    }
+    if (!localHist || !Array.isArray(localHist) || localHist.length === 0) {
+      return cloudHist;
+    }
+
+    const merged = [...cloudHist];
+    const seenIds = new Set(cloudHist.map(h => h.id));
+
+    for (const localEntry of localHist) {
+      if (!seenIds.has(localEntry.id)) {
+        merged.push(localEntry);
+        seenIds.add(localEntry.id);
+      }
+    }
+    return merged;
+  }
+
   // User Accounts & Authentication (Local + Cloud API Sync)
   getCurrentUser() {
     try {
@@ -181,12 +236,13 @@ export class StorageService {
 
   saveLocalAccount(user, password, activities = null, history = null) {
     const accounts = this.getRegisteredAccounts();
-    const idx = accounts.findIndex(acc => acc.email.toLowerCase() === user.email.toLowerCase());
+    const cleanEmail = (user.email || '').trim().toLowerCase();
+    const idx = accounts.findIndex(acc => (acc.email || '').toLowerCase() === cleanEmail);
     const accData = {
       id: user.id || 'usr-' + Date.now(),
-      email: user.email.trim(),
+      email: cleanEmail,
       password: password || (idx !== -1 ? accounts[idx].password : ''),
-      name: user.name || user.email.split('@')[0],
+      name: user.name || cleanEmail.split('@')[0],
       createdAt: user.createdAt || new Date().toISOString(),
       activities: activities || user.activities || this.getActivities(),
       history: history || user.history || this.getHistory()
@@ -201,117 +257,75 @@ export class StorageService {
   }
 
   async registerUser(email, password, name) {
-    const cleanEmail = email.trim();
+    const cleanEmail = email.trim().toLowerCase();
     const cleanName = name.trim() || cleanEmail.split('@')[0];
     const currentActivities = this.getActivities();
     const currentHistory = this.getHistory();
 
-    try {
-      const res = await fetch('/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: cleanEmail,
-          password,
-          name: cleanName,
-          activities: currentActivities,
-          history: currentHistory
-        })
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || 'Failed to create account.');
-      }
-
-      const user = data.user;
-      this.setCurrentUser({ ...user, password });
-      this.saveLocalAccount(user, password, user.activities, user.history);
-      return user;
-    } catch (err) {
-      if (err.message.includes('already exists')) {
-        throw err;
-      }
-      return this.registerUserLocal(cleanEmail, password, cleanName);
+    const res = await fetch('/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: cleanEmail,
+        password,
+        name: cleanName,
+        activities: currentActivities,
+        history: currentHistory
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      throw new Error(data.error || 'Failed to create account.');
     }
-  }
 
-  registerUserLocal(email, password, name) {
-    const accounts = this.getRegisteredAccounts();
-    if (accounts.some(acc => acc.email.toLowerCase() === email.toLowerCase())) {
-      throw new Error('An account with this email already exists.');
-    }
-    const newUser = {
-      id: 'usr-' + Date.now(),
-      email: email.trim(),
-      password,
-      name: name.trim() || email.split('@')[0],
-      createdAt: new Date().toISOString(),
-      activities: this.getActivities(),
-      history: this.getHistory()
-    };
-    accounts.push(newUser);
-    localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
-    this.setCurrentUser(newUser);
-    return newUser;
+    const user = data.user;
+    this.setCurrentUser({ ...user, password });
+    this.saveLocalAccount(user, password, user.activities, user.history);
+    this.setLastSynced(Date.now());
+    return user;
   }
 
   async loginUser(email, password) {
-    const cleanEmail = email.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const currentLocalActivities = this.getActivities();
+    const currentLocalHistory = this.getHistory();
 
-    try {
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, password })
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || 'Invalid email or password.');
-      }
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: cleanEmail, password })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      throw new Error(data.error || 'Invalid email or password.');
+    }
 
-      const user = data.user;
-      this.setCurrentUser({ ...user, password });
-      
-      if (user.activities && Array.isArray(user.activities)) {
-        localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(user.activities));
-      }
-      if (user.history && Array.isArray(user.history)) {
-        localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(user.history));
-      }
+    const user = data.user;
+    const cloudActivities = user.activities || [];
+    const cloudHistory = user.history || [];
 
-      this.saveLocalAccount(user, password, user.activities, user.history);
-      return user;
-    } catch (err) {
-      if (err.message.includes('Invalid email or password')) {
-        throw err;
-      }
-      return this.loginUserLocal(cleanEmail, password);
-    }
-  }
+    // Intelligently merge any local custom stars with cloud stars
+    const mergedActivities = this.mergeActivities(currentLocalActivities, cloudActivities);
+    const mergedHistory = this.mergeHistory(currentLocalHistory, cloudHistory);
 
-  loginUserLocal(email, password) {
-    const accounts = this.getRegisteredAccounts();
-    const found = accounts.find(
-      acc => acc.email.toLowerCase() === email.toLowerCase() && acc.password === password
-    );
-    if (!found) {
-      throw new Error('Invalid email or password.');
+    localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(mergedActivities));
+    localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(mergedHistory));
+    this.setCurrentUser({ ...user, password });
+    this.saveLocalAccount(user, password, mergedActivities, mergedHistory);
+    this.setLastSynced(Date.now());
+
+    // If local device had extra custom stars, push merged set to cloud immediately
+    if (mergedActivities.length !== cloudActivities.length || mergedHistory.length !== cloudHistory.length) {
+      await this.triggerSync();
     }
-    if (found.activities) {
-      localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(found.activities));
-    }
-    if (found.history) {
-      localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(found.history));
-    }
-    this.setCurrentUser(found);
-    return found;
+    return user;
   }
 
   setCurrentUser(user) {
     const session = {
       id: user.id,
-      email: user.email,
-      name: user.name,
+      email: (user.email || '').trim().toLowerCase(),
+      name: user.name || (user.email || '').split('@')[0],
       password: user.password,
       loggedInAt: new Date().toISOString()
     };
@@ -320,11 +334,12 @@ export class StorageService {
 
   logout() {
     localStorage.removeItem(STORAGE_KEYS.USER);
+    localStorage.removeItem(STORAGE_KEYS.LAST_SYNCED);
   }
 
   async triggerSync() {
     const user = this.getCurrentUser();
-    if (!user) return;
+    if (!user || !user.email) return;
 
     const activities = this.getActivities();
     const history = this.getHistory();
@@ -332,7 +347,7 @@ export class StorageService {
     this.saveLocalAccount(user, user.password, activities, history);
 
     try {
-      await fetch('/api/sync', {
+      const res = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -344,31 +359,74 @@ export class StorageService {
           history
         })
       });
+      if (res.ok) {
+        this.setLastSynced(Date.now());
+      }
     } catch (e) {
       console.warn('Cloud sync background warning:', e);
     }
   }
 
-  async syncFromCloudOnStartup() {
+  // Cross-device automatic sync from cloud
+  async syncFromCloud() {
     const user = this.getCurrentUser();
-    if (!user || !user.email) return;
+    if (!user || !user.email) return { success: false, reason: 'not_logged_in' };
 
     try {
       const res = await fetch(`/api/user?email=${encodeURIComponent(user.email)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.user) {
-          if (data.user.activities && Array.isArray(data.user.activities)) {
-            localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(data.user.activities));
-          }
-          if (data.user.history && Array.isArray(data.user.history)) {
-            localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(data.user.history));
-          }
-          this.saveLocalAccount(data.user, user.password, data.user.activities, data.user.history);
-        }
+      if (!res.ok) {
+        throw new Error('Failed to fetch user data from cloud.');
       }
-    } catch (e) {
-      console.warn('Startup cloud sync warning:', e);
+      const data = await res.json();
+      if (data.user) {
+        const cloudActivities = data.user.activities || [];
+        const cloudHistory = data.user.history || [];
+
+        localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(cloudActivities));
+        localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(cloudHistory));
+        this.saveLocalAccount(data.user, user.password, cloudActivities, cloudHistory);
+        this.setLastSynced(Date.now());
+        this.notifySyncListeners();
+        return { success: true, activitiesCount: cloudActivities.length, historyCount: cloudHistory.length };
+      }
+      return { success: false, reason: 'no_user_returned' };
+    } catch (err) {
+      console.warn('Cloud sync error:', err);
+      return { success: false, error: err.message };
     }
+  }
+
+  getLastSynced() {
+    const ts = localStorage.getItem(STORAGE_KEYS.LAST_SYNCED);
+    return ts ? parseInt(ts, 10) : null;
+  }
+
+  setLastSynced(timestamp) {
+    localStorage.setItem(STORAGE_KEYS.LAST_SYNCED, timestamp.toString());
+  }
+
+  getLastSyncedText() {
+    const ts = this.getLastSynced();
+    if (!ts) return 'Active';
+    const diff = Math.floor((Date.now() - ts) / 1000);
+    if (diff < 10) return 'Synced just now';
+    if (diff < 60) return `Synced ${diff}s ago`;
+    const mins = Math.floor(diff / 60);
+    if (mins < 60) return `Synced ${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `Synced ${hours}h ago`;
+    return `Synced ${new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  }
+
+  addSyncListener(callback) {
+    if (typeof callback === 'function') {
+      this.syncListeners.push(callback);
+    }
+  }
+
+  notifySyncListeners() {
+    this.syncListeners.forEach(cb => {
+      try { cb(); } catch (e) { console.error('Sync listener error:', e); }
+    });
   }
 }
