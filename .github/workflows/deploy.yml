@@ -1,0 +1,27 @@
+name: Deploy to Cloud Run
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCLOUD_PROJECT }}
+          service_account_key: ${{ secrets.GCLOUD_SA_KEY }}
+          export_default_credentials: true
+      - name: Build Docker image
+        run: |
+          docker build -t gcr.io/${{ secrets.GCLOUD_PROJECT }}/star-jar:$GITHUB_SHA .
+          docker push gcr.io/${{ secrets.GCLOUD_PROJECT }}/star-jar:$GITHUB_SHA
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ secrets.CLOUD_RUN_SERVICE }} \
+            --image gcr.io/${{ secrets.GCLOUD_PROJECT }}/star-jar:$GITHUB_SHA \
+            --region ${{ secrets.CLOUD_RUN_REGION }} \
+            --platform managed \
+            --allow-unauthenticated

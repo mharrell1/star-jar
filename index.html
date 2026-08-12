@@ -3,20 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>StarJar — Origami Activity & Creativity Jar</title>
+  <title>The Star Jar — Origami Activity & Creativity Jar</title>
   <meta name="description" content="Fill your digital glass jar with colorful origami glitter stars representing your creative and productive activities. Shake the jar to draw your next inspiration!">
   
   <!-- iOS Safari PWA / Native-feel Meta Tags -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="StarJar">
+  <meta name="apple-mobile-web-app-title" content="The Star Jar">
   <meta name="theme-color" content="#0a0b1e">
-  <meta name="mobile-web-app-capable" content="yes">
+  <!-- Cache Invalidation Meta Tags -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   
-  <link rel="apple-touch-icon" href="assets/stars/star_pink.png">
-  <link rel="manifest" href="manifest.json">
-  <link rel="icon" href="assets/stars/star_pink.png" type="image/png">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="apple-touch-icon" href="assets/icon-180.png?v=4">
+  <link rel="manifest" href="manifest.json?v=4">
+  <link rel="icon" href="assets/icon-192.png?v=4" type="image/png">
+  <link rel="stylesheet" href="css/style.css?v=20260812_10">
 </head>
 <body>
   <!-- Ambient Space Starfield -->
@@ -25,8 +28,8 @@
   <!-- Header -->
   <header>
     <div class="brand">
-      <img src="assets/stars/star_pink.png" alt="StarJar icon" width="34" height="34" style="filter: drop-shadow(0 0 8px #f7a8b8);">
-      <h1>StarJar</h1>
+      <img src="assets/stars/star_pink.png" alt="The Star Jar icon" width="34" height="34" style="filter: drop-shadow(0 0 8px #f7a8b8);">
+      <h1>The Star Jar</h1>
     </div>
     <div class="header-actions">
       <button id="headerAddStarBtn" class="nav-btn header-add-btn" aria-label="Fold a New Star">
@@ -265,8 +268,9 @@
   </div>
 
   <!-- Task Details Popup Modal -->
-  <div class="modal-overlay" id="taskModalOverlay" role="dialog" aria-modal="true">
+  <div class="modal-overlay" id="taskModalOverlay" role="dialog" aria-modal="true" onclick="if(event.target===this){this.classList.remove('active');if(window.closeTaskModal)window.closeTaskModal();}">
     <div class="popup-card">
+      <button id="closePopupIconBtn" class="popup-close-x" type="button" onclick="document.getElementById('taskModalOverlay').classList.remove('active');if(window.closeTaskModal)window.closeTaskModal();" aria-label="Close details popup">&times;</button>
       <img id="popupStarImage" src="assets/stars/star_pink.png" alt="Drawn paper star" class="popup-star-icon">
       <h3 class="popup-title" id="popupTaskTitle">Task Title</h3>
       
@@ -293,7 +297,7 @@
           <button id="redrawBtn" class="btn-redraw">
             ⟳ Draw Another
           </button>
-          <button id="closeModalBtn" class="btn-close-modal">
+          <button id="closeModalBtn" class="btn-close-modal" type="button" onclick="document.getElementById('taskModalOverlay').classList.remove('active');if(window.closeTaskModal)window.closeTaskModal();">
             Keep in Jar
           </button>
         </div>
@@ -442,6 +446,6 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- Bundled JS (no ES modules — Safari compatible) -->
-  <script src="js/app.js"></script>
+  <script src="js/app.js?v=20260812_10"></script>
 </body>
 </html>

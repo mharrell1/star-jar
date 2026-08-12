@@ -657,6 +657,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const mobileTaskTimeInput = document.getElementById('mobileTaskTime');
   const closeMobileAddBtn = document.getElementById('closeMobileAddBtn');
   let isMobileAddType = 'creative';
+  let shakeCooldown = false;
 
   // Draw Activity Controls
   const drawTimeChips = document.querySelectorAll('#drawTimeChips .chip');
@@ -974,101 +975,157 @@ document.addEventListener('DOMContentLoaded', () => {
     const pool = filtered.length > 0 ? filtered : activities;
     const selected = pool[Math.floor(Math.random() * pool.length)];
 
+    // Block motion sensor drawing
+    shakeCooldown = true;
+
     triggerHaptic([50, 40, 50, 40, 60]);
     jarEngine.shake(900);
 
-    setTimeout(() => {
-      openTaskModal(selected);
-    }, 700);
+    openTaskModal(selected);
   }
   // --------------------------------------------------------------------------
-  // Mobile / iPhone Shake Sensor Integration
+  // Mobile / iPhone Shake Sensor Integration (High-Sensitivity Energy Engine)
   // --------------------------------------------------------------------------
-  let lastX = 0, lastY = 0, lastZ = 0;
-  let lastUpdate = 0;
-  const SHAKE_THRESHOLD = 8;
+  let lastX = null, lastY = null, lastZ = null;
+  let accumulatedMotion = 0;
+  let lastDrawTime = 0;
   let motionPermissionGranted = false;
+
+  // Ultra-responsive energy threshold: senses gentle up/down & omnidirectional motion
+  const MOTION_TRIGGER_ENERGY = 1.4;  // Low threshold — gentle rocking triggers draw
+  const MOTION_DECAY = 0.94;          // Slow decay — energy builds up quickly across frames
+  const DRAW_COOLDOWN_MS = 2000;      // 2.0s cooldown between draws
 
   const mobileSensorPill = document.getElementById('mobileSensorPill');
   const motionPermissionBtn = document.getElementById('requestMotionPermissionBtn');
 
   function handleDeviceMotion(event) {
-    const current = event.accelerationIncludingGravity;
-    if (!current) return;
+    // If modal is active or jar is shaking or in cooldown, ignore motion completely
+    if (taskModal.classList.contains('active') || 
+        resolutionModal.classList.contains('active') || 
+        jarEngine.isShaking ||
+        Date.now() - lastDrawTime < DRAW_COOLDOWN_MS) {
+      accumulatedMotion = 0;
+      lastX = null;
+      lastY = null;
+      lastZ = null;
+      return;
+    }
 
-    const currentTime = performance.now();
-    if ((currentTime - lastUpdate) > 100) {
-      const diffTime = currentTime - lastUpdate;
-      lastUpdate = currentTime;
+    const current = event.accelerationIncludingGravity || event.acceleration;
+    if (!current || current.x === null || current.y === null || current.z === null) return;
 
-      const speed = Math.abs(current.x + current.y + current.z - lastX - lastY - lastZ) / diffTime * 10000;
-
-      if (speed > SHAKE_THRESHOLD) {
-        if (!jarEngine.isShaking && !taskModal.classList.contains('active') && !resolutionModal.classList.contains('active')) {
-          performDraw();
-        }
-      }
-
+    if (lastX === null || lastY === null || lastZ === null) {
       lastX = current.x;
       lastY = current.y;
       lastZ = current.z;
+      accumulatedMotion = 0;
+      return;
+    }
+
+    const deltaX = current.x - lastX;
+    const deltaY = current.y - lastY;
+    const deltaZ = current.z - lastZ;
+
+    lastX = current.x;
+    lastY = current.y;
+    lastZ = current.z;
+
+    // 3D delta magnitude for this frame (with extra vertical boost for up/down motion)
+    const frameMag = Math.hypot(deltaX, deltaY * 1.25, deltaZ);
+
+    // Accumulate motion energy with smooth exponential decay
+    accumulatedMotion = (accumulatedMotion * MOTION_DECAY) + frameMag;
+
+    // Trigger draw as soon as active movement energy builds up
+    if (accumulatedMotion > MOTION_TRIGGER_ENERGY) {
+      accumulatedMotion = 0;
+      lastDrawTime = Date.now();
+      lastX = null;
+      lastY = null;
+      lastZ = null;
+      performDraw();
     }
   }
 
   function enableMotionSensor() {
     motionPermissionGranted = true;
-    window.addEventListener('devicemotion', handleDeviceMotion);
+    lastDrawTime = Date.now() + 2000;
+    accumulatedMotion = 0;
+    lastX = null;
+    lastY = null;
+    lastZ = null;
+    window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
+  }
+
+  // Detect if browser requires explicit permission (iOS 13+ Safari)
+  const isIOSPermissionRequired = (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function');
+
+  if (isIOSPermissionRequired) {
+    if (mobileSensorPill) mobileSensorPill.style.display = 'flex';
+
+    if (motionPermissionBtn) {
+      const handlePermissionRequest = async (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        accumulatedMotion = 0;
+        lastDrawTime = Date.now() + 2500;
+        lastX = null;
+        lastY = null;
+        lastZ = null;
+
+        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+          try {
+            const state = await DeviceMotionEvent.requestPermission();
+            if (state === 'granted') {
+              enableMotionSensor();
+              motionPermissionBtn.innerHTML = '<span>✓ Motion Sensor Active — Shake Phone!</span>';
+              motionPermissionBtn.style.background = 'linear-gradient(135deg, #06d6a0, #118ab2)';
+              motionPermissionBtn.style.color = '#fff';
+              showToast('✨ Motion sensor activated! Shake your phone to draw.');
+              setTimeout(() => {
+                if (mobileSensorPill) {
+                  mobileSensorPill.style.transition = 'opacity 0.4s ease';
+                  mobileSensorPill.style.opacity = '0';
+                  setTimeout(() => {
+                    mobileSensorPill.style.display = 'none';
+                  }, 400);
+                }
+              }, 2000);
+            } else {
+              motionPermissionBtn.innerHTML = '<span>❌ Permission Denied (Check Safari Settings)</span>';
+              showToast('Motion access denied — check Safari Settings.');
+            }
+          } catch (err) {
+            console.error('DeviceMotion permission catch:', err);
+            showToast('Motion permission error: ' + err.message);
+          }
+        }
+      };
+
+      motionPermissionBtn.addEventListener('click', handlePermissionRequest);
+      motionPermissionBtn.addEventListener('touchend', handlePermissionRequest);
+    }
+  } else if ('ontouchstart' in window && window.DeviceMotionEvent) {
+    enableMotionSensor();
     if (mobileSensorPill) mobileSensorPill.style.display = 'none';
-    triggerHaptic([60, 40, 60]);
-    showToast('🫙 Shake your phone to draw a star!');
+  } else {
+    if (mobileSensorPill) mobileSensorPill.style.display = 'none';
   }
 
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-
-  if (window.DeviceMotionEvent) {
-    if (isIOS && typeof DeviceMotionEvent.requestPermission === 'function') {
-      // iOS 13+ — must request permission from user gesture
-      // Show the pill banner so user knows to tap it
-      if (mobileSensorPill) mobileSensorPill.style.display = 'flex';
-
-      // Pill button: ONLY requests permission, does not draw
-      if (motionPermissionBtn) {
-        motionPermissionBtn.addEventListener('click', () => {
-          DeviceMotionEvent.requestPermission()
-            .then(state => {
-              if (state === 'granted') {
-                enableMotionSensor();
-              } else {
-                showToast('Motion access denied — use the Shake button instead.');
-                if (mobileSensorPill) mobileSensorPill.style.display = 'none';
-              }
-            })
-            .catch(() => {
-              if (mobileSensorPill) mobileSensorPill.style.display = 'none';
-            });
-        });
-      }
-    } else if (isIOS) {
-      // iOS < 13 — no permission needed
-      window.addEventListener('devicemotion', handleDeviceMotion);
-    } else {
-      // Android / desktop
-      window.addEventListener('devicemotion', handleDeviceMotion);
+  // Shake/draw buttons: draw a star
+  function drawWithPermissionCheck(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
     }
-  }
-
-  // Shake/draw buttons: draw a star (and request permission on first tap if still needed)
-  function drawWithPermissionCheck() {
-    if (isIOS && typeof DeviceMotionEvent !== 'undefined' &&
-        typeof DeviceMotionEvent.requestPermission === 'function' &&
-        !motionPermissionGranted) {
-      // Grant permission silently on first draw tap too
-      DeviceMotionEvent.requestPermission()
-        .then(state => {
-          if (state === 'granted') enableMotionSensor();
-        })
-        .catch(() => {});
-    }
+    accumulatedMotion = 0;
+    lastDrawTime = Date.now() + 2000;
+    lastX = null;
+    lastY = null;
+    lastZ = null;
     performDraw();
   }
 
@@ -1077,9 +1134,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const mobileShakeBtn = document.getElementById('mobileShakeBtn');
   if (mobileShakeBtn) mobileShakeBtn.addEventListener('click', drawWithPermissionCheck);
-
-  const jarClickArea = document.getElementById('jarClickArea');
-  if (jarClickArea) jarClickArea.addEventListener('click', drawWithPermissionCheck);
 
   // --------------------------------------------------------------------------
   // Task Details Modal
@@ -1101,16 +1155,53 @@ document.addEventListener('DOMContentLoaded', () => {
       popupTaskLink.style.display = 'none';
     }
 
+    accumulatedMotion = 0;
+    lastDrawTime = Date.now() + 2000;
+    lastX = null;
+    lastY = null;
+    lastZ = null;
     taskModal.classList.add('active');
   }
 
   function closeTaskModal() {
     taskModal.classList.remove('active');
+    accumulatedMotion = 0;
+    lastDrawTime = Date.now() + 2000;
+    lastX = null;
+    lastY = null;
+    lastZ = null;
+  }
+  window.closeTaskModal = closeTaskModal;
+
+  const closeModalBtn = document.getElementById('closeModalBtn');
+  const closePopupIconBtn = document.getElementById('closePopupIconBtn');
+
+  if (closeModalBtn) {
+    closeModalBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeTaskModal();
+    });
   }
 
-  document.getElementById('closeModalBtn').addEventListener('click', closeTaskModal);
+  if (closePopupIconBtn) {
+    closePopupIconBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeTaskModal();
+    });
+  }
 
-  document.getElementById('redrawBtn').addEventListener('click', () => {
+  // Tapping backdrop overlay also dismisses the prompt modal
+  taskModal.addEventListener('click', (e) => {
+    if (e.target === taskModal) {
+      closeTaskModal();
+    }
+  });
+
+  document.getElementById('redrawBtn').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     closeTaskModal();
     setTimeout(() => {
       performDraw();
