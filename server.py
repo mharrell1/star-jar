@@ -10,26 +10,69 @@ from datetime import datetime
 
 PORT = int(os.environ.get("PORT", 8000))
 DB_PATH = os.path.join(os.path.dirname(__file__), "starjar.db")
+BUCKET_NAME = "star-jar-user-data-505202"
+
+USE_GCS = False
+if "K_SERVICE" in os.environ:
+    try:
+        from google.cloud import storage
+        USE_GCS = True
+    except ImportError:
+        print("google-cloud-storage not installed, falling back to SQLite", file=sys.stderr)
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            name TEXT NOT NULL,
-            activities TEXT NOT NULL,
-            history TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-    """)
-    conn.commit()
-    conn.close()
+    if not USE_GCS:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                name TEXT NOT NULL,
+                activities TEXT NOT NULL,
+                history TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.commit()
+        conn.close()
 
 init_db()
+
+# GCS Helper Functions
+def get_gcs_client():
+    return storage.Client()
+
+def get_user_from_gcs(email):
+    email_clean = email.strip().lower()
+    if not email_clean:
+        return None
+    try:
+        client = get_gcs_client()
+        bucket = client.bucket(BUCKET_NAME)
+        blob = bucket.blob(f"users/{email_clean}.json")
+        if not blob.exists():
+            return None
+        return json.loads(blob.download_as_text())
+    except Exception as e:
+        print(f"Error getting user from GCS: {e}", file=sys.stderr)
+        return None
+
+def save_user_to_gcs(email, user_data):
+    email_clean = email.strip().lower()
+    if not email_clean:
+        return False
+    try:
+        client = get_gcs_client()
+        bucket = client.bucket(BUCKET_NAME)
+        blob = bucket.blob(f"users/{email_clean}.json")
+        blob.upload_from_string(json.dumps(user_data), content_type='application/json')
+        return True
+    except Exception as e:
+        print(f"Error saving user to GCS: {e}", file=sys.stderr)
+        return False
 
 class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
@@ -61,32 +104,46 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
             if not email:
                 return self.send_json({'error': 'Email required'}, 400)
             
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE lower(email) = ?", (email,))
-            row = cursor.fetchone()
-            conn.close()
+            user_data = None
+            if USE_GCS:
+                user_data = get_user_from_gcs(email)
+            else:
+                conn = sqlite3.connect(DB_PATH)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users WHERE lower(email) = ?", (email,))
+                row = cursor.fetchone()
+                conn.close()
 
-            if row:
-                try:
-                    activities = json.loads(row['activities'])
-                except:
-                    activities = []
-                try:
-                    history = json.loads(row['history'])
-                except:
-                    history = []
-                
-                return self.send_json({
-                    'success': True,
-                    'user': {
+                if row:
+                    try:
+                        activities = json.loads(row['activities'])
+                    except:
+                        activities = []
+                    try:
+                        history = json.loads(row['history'])
+                    except:
+                        history = []
+                    
+                    user_data = {
                         'id': row['id'],
                         'email': row['email'],
                         'name': row['name'],
                         'activities': activities,
                         'history': history,
-                        'updatedAt': row['updated_at']
+                        'updated_at': row['updated_at']
+                    }
+
+            if user_data:
+                return self.send_json({
+                    'success': True,
+                    'user': {
+                        'id': user_data['id'],
+                        'email': user_data['email'],
+                        'name': user_data['name'],
+                        'activities': user_data['activities'],
+                        'history': user_data['history'],
+                        'updatedAt': user_data.get('updated_at', user_data.get('updatedAt', ''))
                     }
                 })
             else:
@@ -115,24 +172,43 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
             if not email or not password:
                 return self.send_json({'error': 'Email and password are required.'}, 400)
 
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM users WHERE lower(email) = ?", (email,))
-            if cursor.fetchone():
-                conn.close()
-                return self.send_json({'error': 'An account with this email already exists.'}, 400)
-
             user_id = f"usr-{int(time.time() * 1000)}"
             now_iso = datetime.utcnow().isoformat() + "Z"
-            act_json = json.dumps(activities)
-            hist_json = json.dumps(history)
 
-            cursor.execute("""
-                INSERT INTO users (id, email, password, name, activities, history, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (user_id, email, password, name, act_json, hist_json, now_iso, now_iso))
-            conn.commit()
-            conn.close()
+            if USE_GCS:
+                existing = get_user_from_gcs(email)
+                if existing:
+                    return self.send_json({'error': 'An account with this email already exists.'}, 400)
+                
+                user_data = {
+                    'id': user_id,
+                    'email': email,
+                    'password': password,
+                    'name': name,
+                    'activities': activities,
+                    'history': history,
+                    'created_at': now_iso,
+                    'updated_at': now_iso
+                }
+                if not save_user_to_gcs(email, user_data):
+                    return self.send_json({'error': 'Failed to save account to Cloud Storage.'}, 500)
+            else:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM users WHERE lower(email) = ?", (email,))
+                if cursor.fetchone():
+                    conn.close()
+                    return self.send_json({'error': 'An account with this email already exists.'}, 400)
+
+                act_json = json.dumps(activities)
+                hist_json = json.dumps(history)
+
+                cursor.execute("""
+                    INSERT INTO users (id, email, password, name, activities, history, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (user_id, email, password, name, act_json, hist_json, now_iso, now_iso))
+                conn.commit()
+                conn.close()
 
             return self.send_json({
                 'success': True,
@@ -153,37 +229,48 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
             if not email or not password:
                 return self.send_json({'error': 'Email and password are required.'}, 400)
 
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE lower(email) = ?", (email,))
-            row = cursor.fetchone()
-            conn.close()
+            user_data = None
+            if USE_GCS:
+                user_data = get_user_from_gcs(email)
+            else:
+                conn = sqlite3.connect(DB_PATH)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users WHERE lower(email) = ?", (email,))
+                row = cursor.fetchone()
+                conn.close()
 
-            if not row:
+                if row:
+                    try:
+                        activities = json.loads(row['activities'])
+                    except:
+                        activities = []
+                    try:
+                        history = json.loads(row['history'])
+                    except:
+                        history = []
+                    user_data = {
+                        'id': row['id'],
+                        'email': row['email'],
+                        'password': row['password'],
+                        'name': row['name'],
+                        'activities': activities,
+                        'history': history,
+                        'updated_at': row['updated_at']
+                    }
+
+            if not user_data or user_data['password'] != password:
                 return self.send_json({'error': 'Invalid email or password.'}, 401)
-
-            if row['password'] != password:
-                return self.send_json({'error': 'Invalid email or password.'}, 401)
-
-            try:
-                activities = json.loads(row['activities'])
-            except:
-                activities = []
-            try:
-                history = json.loads(row['history'])
-            except:
-                history = []
 
             return self.send_json({
                 'success': True,
                 'user': {
-                    'id': row['id'],
-                    'email': row['email'],
-                    'name': row['name'],
-                    'activities': activities,
-                    'history': history,
-                    'updatedAt': row['updated_at']
+                    'id': user_data['id'],
+                    'email': user_data['email'],
+                    'name': user_data['name'],
+                    'activities': user_data['activities'],
+                    'history': user_data['history'],
+                    'updatedAt': user_data.get('updated_at', user_data.get('updatedAt', ''))
                 }
             })
 
@@ -198,31 +285,57 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
             if not email:
                 return self.send_json({'error': 'Email is required.'}, 400)
 
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE lower(email) = ?", (email,))
-            row = cursor.fetchone()
-
             now_iso = datetime.utcnow().isoformat() + "Z"
-            act_json = json.dumps(activities)
-            hist_json = json.dumps(history)
 
-            if row:
-                cursor.execute("""
-                    UPDATE users
-                    SET activities = ?, history = ?, updated_at = ?
-                    WHERE lower(email) = ?
-                """, (act_json, hist_json, now_iso, email))
+            if USE_GCS:
+                user_data = get_user_from_gcs(email)
+                if user_data:
+                    user_data['activities'] = activities
+                    user_data['history'] = history
+                    user_data['updated_at'] = now_iso
+                    if password:
+                        user_data['password'] = password
+                    if name:
+                        user_data['name'] = name
+                else:
+                    new_id = user_id or f"usr-{int(time.time() * 1000)}"
+                    user_data = {
+                        'id': new_id,
+                        'email': email,
+                        'password': password or 'pass123',
+                        'name': name,
+                        'activities': activities,
+                        'history': history,
+                        'created_at': now_iso,
+                        'updated_at': now_iso
+                    }
+                if not save_user_to_gcs(email, user_data):
+                    return self.send_json({'error': 'Failed to sync user to Cloud Storage.'}, 500)
             else:
-                new_id = user_id or f"usr-{int(time.time() * 1000)}"
-                cursor.execute("""
-                    INSERT INTO users (id, email, password, name, activities, history, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (new_id, email, password or 'pass123', name, act_json, hist_json, now_iso, now_iso))
+                conn = sqlite3.connect(DB_PATH)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users WHERE lower(email) = ?", (email,))
+                row = cursor.fetchone()
 
-            conn.commit()
-            conn.close()
+                act_json = json.dumps(activities)
+                hist_json = json.dumps(history)
+
+                if row:
+                    cursor.execute("""
+                        UPDATE users
+                        SET activities = ?, history = ?, updated_at = ?
+                        WHERE lower(email) = ?
+                    """, (act_json, hist_json, now_iso, email))
+                else:
+                    new_id = user_id or f"usr-{int(time.time() * 1000)}"
+                    cursor.execute("""
+                        INSERT INTO users (id, email, password, name, activities, history, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (new_id, email, password or 'pass123', name, act_json, hist_json, now_iso, now_iso))
+
+                conn.commit()
+                conn.close()
 
             return self.send_json({'success': True, 'syncedAt': now_iso})
 

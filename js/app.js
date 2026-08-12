@@ -795,7 +795,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const popupTimeBadge = document.getElementById('popupTimeBadge');
   const popupTaskLink = document.getElementById('popupTaskLink');
   const resolutionModal = document.getElementById('resolutionModalOverlay');
-  const mobileAddModal = document.getElementById('mobileAddModalOverlay');
   const editModal = document.getElementById('editModalOverlay');
   
   // Drawers
@@ -1128,12 +1127,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const motionPermissionBtn = document.getElementById('requestMotionPermissionBtn');
 
   function handleDeviceMotion(event) {
-    // If ANY modal is open or jar is shaking or in cooldown, ignore motion completely
+    // If ANY modal is open or jar is shaking or in cooldown, or user is typing in a form input, ignore motion completely
+    const activeEl = document.activeElement;
+    const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
     const anyModalOpen = taskModal.classList.contains('active') ||
         resolutionModal.classList.contains('active') ||
         (mobileAddModal && mobileAddModal.classList.contains('active')) ||
         (editModal && editModal.classList.contains('active'));
-    if (anyModalOpen || jarEngine.isShaking || Date.now() - lastDrawTime < DRAW_COOLDOWN_MS) {
+    if (anyModalOpen || isTyping || jarEngine.isShaking || Date.now() - lastDrawTime < DRAW_COOLDOWN_MS) {
       accumulatedMotion = 0;
       lastX = null;
       lastY = null;
