@@ -259,6 +259,7 @@ class StorageService {
 
   async registerUser(email, password, name) {
     const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
     const cleanName = name.trim() || cleanEmail.split('@')[0];
     const currentActivities = this.getActivities();
     const currentHistory = this.getHistory();
@@ -268,7 +269,7 @@ class StorageService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email: cleanEmail,
-        password,
+        password: cleanPassword,
         name: cleanName,
         activities: currentActivities,
         history: currentHistory
@@ -280,21 +281,22 @@ class StorageService {
     }
 
     const user = data.user;
-    this.setCurrentUser({ ...user, password });
-    this.saveLocalAccount(user, password, user.activities, user.history);
+    this.setCurrentUser({ ...user, password: cleanPassword });
+    this.saveLocalAccount(user, cleanPassword, user.activities, user.history);
     this.setLastSynced(Date.now());
     return user;
   }
 
   async loginUser(email, password) {
     const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
     const currentLocalActivities = this.getActivities();
     const currentLocalHistory = this.getHistory();
 
     const res = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: cleanEmail, password })
+      body: JSON.stringify({ email: cleanEmail, password: cleanPassword })
     });
     const data = await res.json();
     if (!res.ok || data.error) {
@@ -1743,21 +1745,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const name = document.getElementById('authName').value;
 
     authSubmitBtn.disabled = true;
-    authSubmitBtn.textContent = 'Syncing...';
+    authSubmitBtn.textContent = isSignUpMode ? 'Creating Account...' : 'Logging In...';
 
     try {
       if (isSignUpMode) {
         await storage.registerUser(email, password, name);
-        showToast(`Welcome, ${name || email}! Account created & synced to cloud.`);
+        showToast(`✨ Welcome, ${name || email}! Account created & saved to cloud.`);
       } else {
         await storage.loginUser(email, password);
-        showToast(`Welcome back! Imported progress across devices.`);
+        showToast(`🌟 Welcome back! Progress synced across your devices.`);
       }
       refreshJarAndUI();
       authForm.reset();
       updateAccountUI();
     } catch (err) {
-      showToast(err.message || 'Authentication error.');
+      const msg = err.message || 'Authentication error.';
+      showToast(msg);
+      // If user attempted login but no account exists, auto-switch form to Sign Up
+      if (!isSignUpMode && msg.toLowerCase().includes('no account found')) {
+        isSignUpMode = true;
+        authSubmitBtn.textContent = 'Sign Up';
+        toggleAuthModeBtn.textContent = 'Already have an account? Log in';
+        nameFieldGroup.style.display = 'block';
+        setTimeout(() => {
+          showToast('Tap "Sign Up" above to create your account with these credentials!');
+        }, 1200);
+      }
     } finally {
       authSubmitBtn.disabled = false;
       authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Log In';

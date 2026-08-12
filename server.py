@@ -259,8 +259,12 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
                         'updated_at': row['updated_at']
                     }
 
-            if not user_data or user_data['password'] != password:
-                return self.send_json({'error': 'Invalid email or password.'}, 401)
+            if not user_data:
+                return self.send_json({'error': 'No account found for this email. Tap "Sign Up" below to create one.'}, 404)
+
+            saved_pw = user_data.get('password', '')
+            if saved_pw != password and saved_pw.strip() != password.strip():
+                return self.send_json({'error': 'Incorrect password. Please re-enter your password.'}, 401)
 
             return self.send_json({
                 'success': True,

@@ -925,21 +925,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const name = document.getElementById('authName').value;
 
     authSubmitBtn.disabled = true;
-    authSubmitBtn.textContent = 'Syncing...';
+    authSubmitBtn.textContent = isSignUpMode ? 'Creating Account...' : 'Logging In...';
 
     try {
       if (isSignUpMode) {
         await storage.registerUser(email, password, name);
-        showToast(`Welcome, ${name || email}! Account created & synced to cloud.`);
+        showToast(`✨ Welcome, ${name || email}! Account created & saved to cloud.`);
       } else {
         await storage.loginUser(email, password);
-        showToast(`Welcome back! Imported progress across devices.`);
+        showToast(`🌟 Welcome back! Progress synced across your devices.`);
       }
       refreshJarAndUI();
       authForm.reset();
       updateAccountUI();
     } catch (err) {
-      showToast(err.message || 'Authentication error.');
+      const msg = err.message || 'Authentication error.';
+      showToast(msg);
+      // If user attempted login but no account exists, auto-switch form to Sign Up
+      if (!isSignUpMode && msg.toLowerCase().includes('no account found')) {
+        isSignUpMode = true;
+        authSubmitBtn.textContent = 'Sign Up';
+        toggleAuthModeBtn.textContent = 'Already have an account? Log in';
+        nameFieldGroup.style.display = 'block';
+        setTimeout(() => {
+          showToast('Tap "Sign Up" above to create your account with these credentials!');
+        }, 1200);
+      }
     } finally {
       authSubmitBtn.disabled = false;
       authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Log In';

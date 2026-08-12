@@ -258,6 +258,7 @@ export class StorageService {
 
   async registerUser(email, password, name) {
     const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
     const cleanName = name.trim() || cleanEmail.split('@')[0];
     const currentActivities = this.getActivities();
     const currentHistory = this.getHistory();
@@ -267,7 +268,7 @@ export class StorageService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email: cleanEmail,
-        password,
+        password: cleanPassword,
         name: cleanName,
         activities: currentActivities,
         history: currentHistory
@@ -279,21 +280,22 @@ export class StorageService {
     }
 
     const user = data.user;
-    this.setCurrentUser({ ...user, password });
-    this.saveLocalAccount(user, password, user.activities, user.history);
+    this.setCurrentUser({ ...user, password: cleanPassword });
+    this.saveLocalAccount(user, cleanPassword, user.activities, user.history);
     this.setLastSynced(Date.now());
     return user;
   }
 
   async loginUser(email, password) {
     const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
     const currentLocalActivities = this.getActivities();
     const currentLocalHistory = this.getHistory();
 
     const res = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: cleanEmail, password })
+      body: JSON.stringify({ email: cleanEmail, password: cleanPassword })
     });
     const data = await res.json();
     if (!res.ok || data.error) {
