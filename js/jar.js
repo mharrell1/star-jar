@@ -2,6 +2,7 @@
  * jar.js
  * High-performance HTML5 Canvas physics engine for rendering origami stars
  * inside the glass activity jar with realistic dropping, stacking, and stationary resting physics.
+ * Supports unlimited user prompts while keeping the visual jar display beautifully capped at 100 stars.
  */
 
 const STAR_ASSETS = {
@@ -10,6 +11,8 @@ const STAR_ASSETS = {
   fun: ['star_yellow.png', 'star_green.png'],
   both: ['star_purple.png', 'star_lavender.png', 'star_white.png']
 };
+
+const MAX_VISUAL_STARS = 100;
 
 export class JarEngine {
   constructor(canvasElement) {
@@ -84,14 +87,17 @@ export class JarEngine {
   }
 
   getStarRadius(count = this.stars.length) {
+    const effectiveCount = Math.min(count, MAX_VISUAL_STARS);
     const baseDim = Math.min(this.width * 0.068, this.height * 0.055);
     let scale = 1.0;
-    if (count > 40) scale = 0.72;
-    else if (count > 28) scale = 0.78;
-    else if (count > 18) scale = 0.86;
-    else if (count > 10) scale = 0.94;
 
-    return Math.max(13, Math.min(22, baseDim * scale));
+    if (effectiveCount > 75) scale = 0.62;
+    else if (effectiveCount > 50) scale = 0.70;
+    else if (effectiveCount > 35) scale = 0.78;
+    else if (effectiveCount > 20) scale = 0.85;
+    else if (effectiveCount > 10) scale = 0.92;
+
+    return Math.max(12, Math.min(22, baseDim * scale));
   }
 
   loadImages() {
@@ -163,7 +169,8 @@ export class JarEngine {
   }
 
   calculateStationaryPositions(count) {
-    const radius = this.getStarRadius(count);
+    const visualCount = Math.min(count, MAX_VISUAL_STARS);
+    const radius = this.getStarRadius(visualCount);
     const positions = [];
     const { bodyLeft, bodyRight, bodyBottom } = this.jarBounds;
     const availableWidth = (bodyRight - bodyLeft) - 2 * radius - 16;
@@ -171,7 +178,7 @@ export class JarEngine {
     const cols = Math.max(4, Math.floor(availableWidth / colSpacing));
     const rowSpacing = radius * 1.55;
 
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < visualCount; i++) {
       const row = Math.floor(i / cols);
       const col = i % cols;
       const rowOffset = (row % 2 === 1) ? (radius * 0.9) : 0;
@@ -199,15 +206,20 @@ export class JarEngine {
   }
 
   syncStarsWithActivities(activities) {
-    const currentActivityIds = new Set(activities.map(a => a.id));
+    // Keep visual rendering capped at MAX_VISUAL_STARS (100 stars)
+    const visualActivities = activities.length > MAX_VISUAL_STARS
+      ? activities.slice(activities.length - MAX_VISUAL_STARS)
+      : activities;
+
+    const currentActivityIds = new Set(visualActivities.map(a => a.id));
     this.stars = this.stars.filter(s => currentActivityIds.has(s.activityId));
 
     const existingMap = new Map(this.stars.map(s => [s.activityId, s]));
-    const targetRadius = this.getStarRadius(activities.length);
-    const stationaryPositions = this.calculateStationaryPositions(activities.length);
+    const targetRadius = this.getStarRadius(visualActivities.length);
+    const stationaryPositions = this.calculateStationaryPositions(visualActivities.length);
 
     const newStarsList = [];
-    activities.forEach((act, index) => {
+    visualActivities.forEach((act, index) => {
       const pos = stationaryPositions[index] || {
         x: this.width / 2,
         y: this.jarBounds.bodyBottom - targetRadius - 10,
@@ -274,8 +286,8 @@ export class JarEngine {
   }
 
   spawnStar(activity, isNewDrop = true) {
-    const currentCount = this.stars.length + 1;
-    const targetRadius = this.getStarRadius(currentCount);
+    const nextCount = Math.min(this.stars.length + 1, MAX_VISUAL_STARS);
+    const targetRadius = this.getStarRadius(nextCount);
     const imageName = activity.color || this.getRandomImageForType(activity.type);
 
     let star;
@@ -298,6 +310,12 @@ export class JarEngine {
         isGlow: true
       };
       this.stars.push(star);
+
+      // If exceeding MAX_VISUAL_STARS (100), trim the oldest rendered star
+      if (this.stars.length > MAX_VISUAL_STARS) {
+        this.stars.shift();
+      }
+
       // Wake up stars so the incoming star settles naturally into the stack
       this.stars.forEach(s => {
         s.isSleeping = false;
@@ -305,8 +323,8 @@ export class JarEngine {
       });
       this.isSimulating = true;
     } else {
-      const posIndex = this.stars.length;
-      const stationaryPositions = this.calculateStationaryPositions(currentCount);
+      const posIndex = Math.min(this.stars.length, MAX_VISUAL_STARS - 1);
+      const stationaryPositions = this.calculateStationaryPositions(nextCount);
       const pos = stationaryPositions[posIndex] || {
         x: this.width / 2,
         y: this.jarBounds.bodyBottom - targetRadius - 10,
@@ -329,6 +347,10 @@ export class JarEngine {
         isGlow: false
       };
       this.stars.push(star);
+
+      if (this.stars.length > MAX_VISUAL_STARS) {
+        this.stars.shift();
+      }
     }
   }
 
