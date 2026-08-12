@@ -456,6 +456,7 @@ class JarEngine {
     this.images = {};
     this.isShaking = false;
     this.shakeIntensity = 0;
+    this.isSimulating = false;
     this.dpr = window.devicePixelRatio || 1;
 
     this.initCanvasDimensions();
@@ -466,10 +467,17 @@ class JarEngine {
     setTimeout(() => this.initCanvasDimensions(), 200);
     setTimeout(() => this.initCanvasDimensions(), 600);
 
-    window.addEventListener('resize', () => this.initCanvasDimensions());
-    window.addEventListener('orientationchange', () => {
-      setTimeout(() => this.initCanvasDimensions(), 300);
+    window.addEventListener('resize', () => {
+      this.initCanvasDimensions();
+      this.repositionStationaryStars();
     });
+    window.addEventListener('orientationchange', () => {
+      setTimeout(() => {
+        this.initCanvasDimensions();
+        this.repositionStationaryStars();
+      }, 300);
+    });
+
     this.animate = this.animate.bind(this);
     requestAnimationFrame(this.animate);
   }
@@ -496,6 +504,7 @@ class JarEngine {
     this.canvas.style.width = `${this.width}px`;
     this.canvas.style.height = `${this.height}px`;
 
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.scale(this.dpr, this.dpr);
 
     this.jarBounds = {
@@ -509,6 +518,17 @@ class JarEngine {
       bodyRight: this.width * 0.88,
       radius: this.width * 0.38
     };
+  }
+
+  getStarRadius(count = this.stars.length) {
+    const baseDim = Math.min(this.width * 0.068, this.height * 0.055);
+    let scale = 1.0;
+    if (count > 40) scale = 0.72;
+    else if (count > 28) scale = 0.78;
+    else if (count > 18) scale = 0.86;
+    else if (count > 10) scale = 0.94;
+
+    return Math.max(13, Math.min(22, baseDim * scale));
   }
 
   loadImages() {
@@ -540,66 +560,226 @@ class JarEngine {
     return list[Math.floor(Math.random() * list.length)];
   }
 
+  getJarBoundariesAtY(y, starRadius) {
+    const { bodyLeft, bodyRight, bodyTop, bodyBottom, neckLeft, neckRight, neckTop, neckBottom } = this.jarBounds;
+
+    let minX, maxX;
+    if (y <= neckBottom) {
+      minX = neckLeft + starRadius;
+      maxX = neckRight - starRadius;
+    } else if (y < bodyTop + 40) {
+      // Curved shoulder transition
+      const t = (y - neckBottom) / (bodyTop + 40 - neckBottom);
+      const ease = t * t * (3 - 2 * t);
+      const left = neckLeft + (bodyLeft - neckLeft) * ease;
+      const right = neckRight + (bodyRight - neckRight) * ease;
+      minX = left + starRadius;
+      maxX = right - starRadius;
+    } else if (y <= bodyBottom - 30) {
+      // Main jar body
+      minX = bodyLeft + starRadius;
+      maxX = bodyRight - starRadius;
+    } else {
+      // Rounded bottom corners
+      const t = Math.min(1, Math.max(0, (y - (bodyBottom - 30)) / 30));
+      const inset = (1 - Math.sqrt(Math.max(0, 1 - t * t))) * 32;
+      minX = bodyLeft + inset + starRadius;
+      maxX = bodyRight - inset - starRadius;
+    }
+
+    if (minX > maxX) {
+      const mid = (minX + maxX) / 2;
+      minX = mid - 1;
+      maxX = mid + 1;
+    }
+
+    const maxY = bodyBottom - starRadius;
+    const minY = neckTop - 20;
+
+    return { minX, maxX, minY, maxY };
+  }
+
+  calculateStationaryPositions(count) {
+    const radius = this.getStarRadius(count);
+    const positions = [];
+    const { bodyLeft, bodyRight, bodyBottom } = this.jarBounds;
+    const availableWidth = (bodyRight - bodyLeft) - 2 * radius - 16;
+    const colSpacing = radius * 1.85;
+    const cols = Math.max(4, Math.floor(availableWidth / colSpacing));
+    const rowSpacing = radius * 1.55;
+
+    for (let i = 0; i < count; i++) {
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      const rowOffset = (row % 2 === 1) ? (radius * 0.9) : 0;
+      const hash = (i * 9301 + 49297) % 233280;
+      const jitterX = ((hash % 11) - 5) * 0.8;
+      const jitterY = (((hash >> 4) % 9) - 4) * 0.6;
+      const jitterAngle = ((hash % 100) / 100) * Math.PI * 2;
+
+      const rawX = bodyLeft + radius + 12 + rowOffset + col * colSpacing + jitterX;
+      const rawY = bodyBottom - radius - 8 - row * rowSpacing + jitterY;
+
+      const bounds = this.getJarBoundariesAtY(rawY, radius);
+      const clampedX = Math.max(bounds.minX + 2, Math.min(rawX, bounds.maxX - 2));
+      const clampedY = Math.min(rawY, bounds.maxY - 2);
+
+      positions.push({
+        x: clampedX,
+        y: clampedY,
+        angle: jitterAngle,
+        radius: radius
+      });
+    }
+
+    return positions;
+  }
+
   syncStarsWithActivities(activities) {
-    // Keep existing matching stars or spawn new ones
     const currentActivityIds = new Set(activities.map(a => a.id));
     this.stars = this.stars.filter(s => currentActivityIds.has(s.activityId));
 
-    const existingIds = new Set(this.stars.map(s => s.activityId));
+    const existingMap = new Map(this.stars.map(s => [s.activityId, s]));
+    const targetRadius = this.getStarRadius(activities.length);
+    const stationaryPositions = this.calculateStationaryPositions(activities.length);
+
+    const newStarsList = [];
     activities.forEach((act, index) => {
-      if (!existingIds.has(act.id)) {
-        this.spawnStar(act, false, index);
+      const pos = stationaryPositions[index] || {
+        x: this.width / 2,
+        y: this.jarBounds.bodyBottom - targetRadius - 10,
+        angle: 0,
+        radius: targetRadius
+      };
+
+      if (existingMap.has(act.id)) {
+        const s = existingMap.get(act.id);
+        s.radius = targetRadius;
+        if (!this.isSimulating) {
+          s.x = pos.x;
+          s.y = pos.y;
+          s.angle = pos.angle;
+          s.vx = 0;
+          s.vy = 0;
+          s.vAngle = 0;
+          s.isSleeping = true;
+        }
+        newStarsList.push(s);
+      } else {
+        const imageName = act.color || this.getRandomImageForType(act.type);
+        const star = {
+          id: 'star-p-' + Math.random().toString(36).substr(2, 9),
+          activityId: act.id,
+          activity: act,
+          imageName: imageName,
+          x: pos.x,
+          y: pos.y,
+          vx: 0,
+          vy: 0,
+          radius: targetRadius,
+          angle: pos.angle,
+          vAngle: 0,
+          isSleeping: true,
+          isGlow: false
+        };
+        newStarsList.push(star);
+      }
+    });
+
+    this.stars = newStarsList;
+    if (!this.isShaking) {
+      this.isSimulating = false;
+    }
+  }
+
+  repositionStationaryStars() {
+    if (this.isSimulating || this.isShaking) return;
+    const stationaryPositions = this.calculateStationaryPositions(this.stars.length);
+    this.stars.forEach((star, index) => {
+      const pos = stationaryPositions[index];
+      if (pos) {
+        star.x = pos.x;
+        star.y = pos.y;
+        star.radius = pos.radius;
+        star.angle = pos.angle;
+        star.vx = 0;
+        star.vy = 0;
+        star.vAngle = 0;
+        star.isSleeping = true;
       }
     });
   }
 
-  spawnStar(activity, isNewDrop = true, initialIndex = 0) {
+  spawnStar(activity, isNewDrop = true) {
+    const currentCount = this.stars.length + 1;
+    const targetRadius = this.getStarRadius(currentCount);
     const imageName = activity.color || this.getRandomImageForType(activity.type);
-    const starRadius = 22;
 
-    let startX, startY, startVy;
+    let star;
     if (isNewDrop) {
-      // Spawn at the jar opening at the top
-      startX = this.width / 2 + (Math.random() - 0.5) * 30;
-      startY = this.jarBounds.neckTop - 30;
-      startVy = 4.5 + Math.random() * 2;
+      const startX = this.width / 2 + (Math.random() - 0.5) * 20;
+      const startY = this.jarBounds.neckTop - 15;
+      star = {
+        id: 'star-p-' + Math.random().toString(36).substr(2, 9),
+        activityId: activity.id,
+        activity: activity,
+        imageName: imageName,
+        x: startX,
+        y: startY,
+        vx: (Math.random() - 0.5) * 1.5,
+        vy: 4.5 + Math.random() * 1.5,
+        radius: targetRadius,
+        angle: Math.random() * Math.PI * 2,
+        vAngle: (Math.random() - 0.5) * 0.1,
+        isSleeping: false,
+        isGlow: true
+      };
+      this.stars.push(star);
+      // Wake up stars so the incoming star settles naturally into the stack
+      this.stars.forEach(s => {
+        s.isSleeping = false;
+        s.radius = targetRadius;
+      });
+      this.isSimulating = true;
     } else {
-      // Settle in bottom stack
-      const cols = 5;
-      const col = initialIndex % cols;
-      const row = Math.floor(initialIndex / cols);
-      startX = this.jarBounds.bodyLeft + 35 + col * 40 + (Math.random() - 0.5) * 15;
-      startY = this.jarBounds.bodyBottom - 30 - row * 32 - Math.random() * 10;
-      startVy = 0;
+      const posIndex = this.stars.length;
+      const stationaryPositions = this.calculateStationaryPositions(currentCount);
+      const pos = stationaryPositions[posIndex] || {
+        x: this.width / 2,
+        y: this.jarBounds.bodyBottom - targetRadius - 10,
+        angle: 0,
+        radius: targetRadius
+      };
+      star = {
+        id: 'star-p-' + Math.random().toString(36).substr(2, 9),
+        activityId: activity.id,
+        activity: activity,
+        imageName: imageName,
+        x: pos.x,
+        y: pos.y,
+        vx: 0,
+        vy: 0,
+        radius: targetRadius,
+        angle: pos.angle,
+        vAngle: 0,
+        isSleeping: true,
+        isGlow: false
+      };
+      this.stars.push(star);
     }
-
-    const star = {
-      id: 'star-p-' + Math.random().toString(36).substr(2, 9),
-      activityId: activity.id,
-      activity: activity,
-      imageName: imageName,
-      x: Math.max(this.jarBounds.bodyLeft + starRadius, Math.min(startX, this.jarBounds.bodyRight - starRadius)),
-      y: startY,
-      vx: (Math.random() - 0.5) * 2,
-      vy: startVy,
-      radius: starRadius,
-      angle: Math.random() * Math.PI * 2,
-      vAngle: (Math.random() - 0.5) * 0.08,
-      isGlow: isNewDrop
-    };
-
-    this.stars.push(star);
   }
 
   shake(durationMs = 1200) {
     this.isShaking = true;
+    this.isSimulating = true;
     this.shakeIntensity = 1.0;
 
-    // Apply sudden chaotic impulses to all stars
+    // Wake up all stars and apply upward chaotic impulses
     this.stars.forEach(star => {
-      star.vy -= 10 + Math.random() * 12;
-      star.vx += (Math.random() - 0.5) * 14;
-      star.vAngle = (Math.random() - 0.5) * 0.3;
+      star.isSleeping = false;
+      star.vy -= 9 + Math.random() * 10;
+      star.vx += (Math.random() - 0.5) * 12;
+      star.vAngle = (Math.random() - 0.5) * 0.25;
     });
 
     const startTime = performance.now();
@@ -607,10 +787,9 @@ class JarEngine {
       const elapsed = performance.now() - startTime;
       if (elapsed < durationMs) {
         this.shakeIntensity = 1.0 - (elapsed / durationMs);
-        // Add random turbulence during shake
         this.stars.forEach(star => {
-          star.vx += (Math.random() - 0.5) * 2.5 * this.shakeIntensity;
-          star.vy += (Math.random() - 0.5) * 2.5 * this.shakeIntensity;
+          star.vx += (Math.random() - 0.5) * 2.2 * this.shakeIntensity;
+          star.vy += (Math.random() - 0.5) * 2.2 * this.shakeIntensity;
         });
         requestAnimationFrame(decay);
       } else {
@@ -622,68 +801,140 @@ class JarEngine {
   }
 
   updatePhysics() {
-    const gravity = 0.42;
-    const damping = 0.94;
-    const bounce = 0.45;
+    if (!this.isSimulating) return;
 
+    const gravity = 0.38;
+    const airDamping = 0.94;
+    let allResting = !this.isShaking;
+
+    // Step 1: Integrate active stars
     for (let i = 0; i < this.stars.length; i++) {
       const s = this.stars[i];
+      if (s.isSleeping) continue;
 
-      // Gravity & Velocity
       s.vy += gravity;
-      s.vx *= damping;
-      s.vy *= damping;
+      s.vx *= airDamping;
+      s.vy *= airDamping;
+      s.vAngle *= 0.92;
+
       s.x += s.vx;
       s.y += s.vy;
       s.angle += s.vAngle;
-      s.vAngle *= 0.97;
 
-      // Jar Boundary Collisions
-      // Bottom floor
-      if (s.y + s.radius > this.jarBounds.bodyBottom) {
-        s.y = this.jarBounds.bodyBottom - s.radius;
-        s.vy = -Math.abs(s.vy) * bounce;
-        s.vx *= 0.8;
+      if (Math.hypot(s.vx, s.vy) > 0.15 || Math.abs(s.vAngle) > 0.005) {
+        allResting = false;
       }
+    }
 
-      // Left & Right walls
-      if (s.x - s.radius < this.jarBounds.bodyLeft) {
-        s.x = this.jarBounds.bodyLeft + s.radius;
-        s.vx = Math.abs(s.vx) * bounce;
-      } else if (s.x + s.radius > this.jarBounds.bodyRight) {
-        s.x = this.jarBounds.bodyRight - s.radius;
-        s.vx = -Math.abs(s.vx) * bounce;
-      }
+    // Step 2: Multi-pass Position-Based Dynamics (PBD) Constraint Solver
+    const SUB_STEPS = 6;
+    for (let step = 0; step < SUB_STEPS; step++) {
+      // Star-to-star distance constraints
+      for (let i = 0; i < this.stars.length; i++) {
+        const s1 = this.stars[i];
+        for (let j = i + 1; j < this.stars.length; j++) {
+          const s2 = this.stars[j];
+          const dx = s2.x - s1.x;
+          const dy = s2.y - s1.y;
+          const dist = Math.hypot(dx, dy);
+          const minDist = s1.radius + s2.radius - 2;
 
-      // Star-to-Star Collisions (Soft circle physics)
-      for (let j = i + 1; j < this.stars.length; j++) {
-        const s2 = this.stars[j];
-        const dx = s2.x - s.x;
-        const dy = s2.y - s.y;
-        const dist = Math.hypot(dx, dy);
-        const minDist = s.radius + s2.radius - 4; // Slight overlap for natural paper star stack
+          if (dist < minDist && dist > 0.001) {
+            const overlap = (minDist - dist) * 0.5;
+            const nx = dx / dist;
+            const ny = dy / dist;
 
-        if (dist < minDist && dist > 0.001) {
-          const overlap = (minDist - dist) * 0.5;
-          const nx = dx / dist;
-          const ny = dy / dist;
+            // Push apart positions directly (relaxation)
+            s1.x -= nx * overlap;
+            s1.y -= ny * overlap;
+            s2.x += nx * overlap;
+            s2.y += ny * overlap;
 
-          // Push apart
-          s.x -= nx * overlap;
-          s.y -= ny * overlap;
-          s2.x += nx * overlap;
-          s2.y += ny * overlap;
+            // Inelastic collision damping & Coulomb tangential friction
+            const rvx = s2.vx - s1.vx;
+            const rvy = s2.vy - s1.vy;
+            const normalVel = rvx * nx + rvy * ny;
 
-          // Momentum exchange
-          const kx = s.vx - s2.vx;
-          const ky = s.vy - s2.vy;
-          const p = 2 * (nx * kx + ny * ky) / 2;
+            if (normalVel < 0) {
+              const impulse = normalVel * 0.35;
+              s1.vx += impulse * nx;
+              s1.vy += impulse * ny;
+              s2.vx -= impulse * nx;
+              s2.vy -= impulse * ny;
 
-          s.vx -= p * nx * 0.5;
-          s.vy -= p * ny * 0.5;
-          s2.vx += p * nx * 0.5;
-          s2.vy += p * ny * 0.5;
+              const tx = -ny;
+              const ty = nx;
+              const tangVel = rvx * tx + rvy * ty;
+              const friction = tangVel * 0.3;
+              s1.vx += friction * tx;
+              s1.vy += friction * ty;
+              s2.vx -= friction * tx;
+              s2.vy -= friction * ty;
+            }
+
+            // Wake up neighbor if sleeping
+            if (!s1.isSleeping && s2.isSleeping) s2.isSleeping = false;
+            if (!s2.isSleeping && s1.isSleeping) s1.isSleeping = false;
+          }
         }
+      }
+
+      // Jar geometry containment constraints
+      for (let i = 0; i < this.stars.length; i++) {
+        const s = this.stars[i];
+        const bounds = this.getJarBoundariesAtY(s.y, s.radius);
+
+        // Floor collision
+        if (s.y > bounds.maxY) {
+          s.y = bounds.maxY;
+          if (Math.abs(s.vy) < 0.75) {
+            s.vy = 0;
+          } else {
+            s.vy = -s.vy * 0.2;
+          }
+          s.vx *= 0.75;
+          s.vAngle *= 0.8;
+        }
+
+        // Left / Right wall collisions
+        if (s.x < bounds.minX) {
+          s.x = bounds.minX;
+          if (Math.abs(s.vx) < 0.5) {
+            s.vx = 0;
+          } else {
+            s.vx = -s.vx * 0.2;
+          }
+          s.vy *= 0.85;
+        } else if (s.x > bounds.maxX) {
+          s.x = bounds.maxX;
+          if (Math.abs(s.vx) < 0.5) {
+            s.vx = 0;
+          } else {
+            s.vx = -s.vx * 0.2;
+          }
+          s.vy *= 0.85;
+        }
+      }
+    }
+
+    // Step 3: Sleep / Settling check
+    if (!this.isShaking) {
+      let activeCount = 0;
+      for (let i = 0; i < this.stars.length; i++) {
+        const s = this.stars[i];
+        const speed = Math.hypot(s.vx, s.vy);
+        if (speed < 0.15 && Math.abs(s.vAngle) < 0.006) {
+          s.vx = 0;
+          s.vy = 0;
+          s.vAngle = 0;
+          s.isSleeping = true;
+          s.isGlow = false;
+        } else {
+          activeCount++;
+        }
+      }
+      if (activeCount === 0) {
+        this.isSimulating = false;
       }
     }
   }
