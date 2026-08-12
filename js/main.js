@@ -370,11 +370,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const motionPermissionBtn = document.getElementById('requestMotionPermissionBtn');
 
   function handleDeviceMotion(event) {
-    // If modal is active or jar is shaking or in cooldown, ignore motion completely
-    if (taskModal.classList.contains('active') || 
-        resolutionModal.classList.contains('active') || 
-        jarEngine.isShaking ||
-        Date.now() - lastDrawTime < DRAW_COOLDOWN_MS) {
+    // If ANY modal is open or jar is shaking or in cooldown, ignore motion completely
+    const anyModalOpen = taskModal.classList.contains('active') ||
+        resolutionModal.classList.contains('active') ||
+        (document.getElementById('mobileAddModalOverlay') && document.getElementById('mobileAddModalOverlay').classList.contains('active')) ||
+        (document.getElementById('editModalOverlay') && document.getElementById('editModalOverlay').classList.contains('active'));
+    if (anyModalOpen || jarEngine.isShaking || Date.now() - lastDrawTime < DRAW_COOLDOWN_MS) {
       accumulatedMotion = 0;
       lastX = null;
       lastY = null;

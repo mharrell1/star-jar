@@ -669,6 +669,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const popupTimeBadge = document.getElementById('popupTimeBadge');
   const popupTaskLink = document.getElementById('popupTaskLink');
   const resolutionModal = document.getElementById('resolutionModalOverlay');
+  const mobileAddModal = document.getElementById('mobileAddModalOverlay');
+  const editModal = document.getElementById('editModalOverlay');
   
   // Drawers
   const historyDrawer = document.getElementById('historyDrawer');
@@ -1000,11 +1002,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const motionPermissionBtn = document.getElementById('requestMotionPermissionBtn');
 
   function handleDeviceMotion(event) {
-    // If modal is active or jar is shaking or in cooldown, ignore motion completely
-    if (taskModal.classList.contains('active') || 
-        resolutionModal.classList.contains('active') || 
-        jarEngine.isShaking ||
-        Date.now() - lastDrawTime < DRAW_COOLDOWN_MS) {
+    // If ANY modal is open or jar is shaking or in cooldown, ignore motion completely
+    const anyModalOpen = taskModal.classList.contains('active') ||
+        resolutionModal.classList.contains('active') ||
+        (mobileAddModal && mobileAddModal.classList.contains('active')) ||
+        (editModal && editModal.classList.contains('active'));
+    if (anyModalOpen || jarEngine.isShaking || Date.now() - lastDrawTime < DRAW_COOLDOWN_MS) {
       accumulatedMotion = 0;
       lastX = null;
       lastY = null;
