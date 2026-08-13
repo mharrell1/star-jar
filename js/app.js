@@ -527,13 +527,13 @@ class JarEngine {
     const baseDim = Math.min(this.width * 0.068, this.height * 0.055);
     let scale = 1.0;
 
-    if (effectiveCount > 75) scale = 0.62;
-    else if (effectiveCount > 50) scale = 0.70;
-    else if (effectiveCount > 35) scale = 0.78;
-    else if (effectiveCount > 20) scale = 0.85;
+    if (effectiveCount > 75) scale = 0.58;
+    else if (effectiveCount > 50) scale = 0.67;
+    else if (effectiveCount > 35) scale = 0.75;
+    else if (effectiveCount > 20) scale = 0.84;
     else if (effectiveCount > 10) scale = 0.92;
 
-    return Math.max(12, Math.min(22, baseDim * scale));
+    return Math.max(11.5, Math.min(22, baseDim * scale));
   }
 
   loadImages() {
@@ -606,36 +606,45 @@ class JarEngine {
 
   calculateStationaryPositions(count) {
     const visualCount = Math.min(count, MAX_VISUAL_STARS);
+    if (visualCount === 0) return [];
+
     const radius = this.getStarRadius(visualCount);
     const positions = [];
-    const { bodyLeft, bodyRight, bodyBottom } = this.jarBounds;
-    const availableWidth = (bodyRight - bodyLeft) - 2 * radius - 16;
-    const colSpacing = radius * 1.85;
-    const cols = Math.max(4, Math.floor(availableWidth / colSpacing));
-    const rowSpacing = radius * 1.55;
+    const { bodyBottom } = this.jarBounds;
 
-    for (let i = 0; i < visualCount; i++) {
-      const row = Math.floor(i / cols);
-      const col = i % cols;
-      const rowOffset = (row % 2 === 1) ? (radius * 0.9) : 0;
-      const hash = (i * 9301 + 49297) % 233280;
-      const jitterX = ((hash % 11) - 5) * 0.8;
-      const jitterY = (((hash >> 4) % 9) - 4) * 0.6;
-      const jitterAngle = ((hash % 100) / 100) * Math.PI * 2;
+    const colSpacing = radius * 1.82;
+    const rowSpacing = radius * 1.56;
+    let currentY = bodyBottom - radius - 6;
+    let starIndex = 0;
 
-      const rawX = bodyLeft + radius + 12 + rowOffset + col * colSpacing + jitterX;
-      const rawY = bodyBottom - radius - 8 - row * rowSpacing + jitterY;
+    while (positions.length < visualCount && currentY > this.jarBounds.neckTop) {
+      const bounds = this.getJarBoundariesAtY(currentY, radius);
+      const availableW = Math.max(colSpacing, bounds.maxX - bounds.minX);
+      const maxInRow = Math.max(1, Math.floor(availableW / colSpacing));
+      const countInRow = Math.min(maxInRow, visualCount - positions.length);
 
-      const bounds = this.getJarBoundariesAtY(rawY, radius);
-      const clampedX = Math.max(bounds.minX + 2, Math.min(rawX, bounds.maxX - 2));
-      const clampedY = Math.min(rawY, bounds.maxY - 2);
+      const rowWidth = (countInRow - 1) * colSpacing;
+      const startX = (bounds.minX + bounds.maxX - rowWidth) / 2;
 
-      positions.push({
-        x: clampedX,
-        y: clampedY,
-        angle: jitterAngle,
-        radius: radius
-      });
+      for (let col = 0; col < countInRow; col++) {
+        const hash = (starIndex * 9301 + 49297) % 233280;
+        const jitterX = ((hash % 9) - 4) * 0.5;
+        const jitterY = (((hash >> 4) % 7) - 3) * 0.4;
+        const jitterAngle = ((hash % 100) / 100) * Math.PI * 2;
+
+        const posX = Math.max(bounds.minX + 1, Math.min(startX + col * colSpacing + jitterX, bounds.maxX - 1));
+        const posY = Math.min(bounds.maxY - 1, currentY + jitterY);
+
+        positions.push({
+          x: posX,
+          y: posY,
+          angle: jitterAngle,
+          radius: radius
+        });
+        starIndex++;
+      }
+
+      currentY -= rowSpacing;
     }
 
     return positions;
