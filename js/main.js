@@ -653,11 +653,11 @@ document.addEventListener('DOMContentLoaded', () => {
   let reversalCount = 0;
   let lastReversalTime = 0;
 
-  // Calibrated for effortless natural wrist shake without false button triggers
-  const MIN_DELTA_NOISE_GATE = 2.6;       // Responsive to standard wrist shaking
-  const MOTION_TRIGGER_ENERGY = 9.5;       // Comfortable threshold: natural 1-2s shake
-  const MOTION_DECAY = 0.86;               // Fluid accumulation across cycles
-  const REVERSAL_THRESHOLD = 1.6;          // Wrist oscillation threshold
+  // Calibrated for effortless gentle wrist shake with strict UI touch suppression
+  const MIN_DELTA_NOISE_GATE = 1.8;        // Responsive to gentle wrist motion
+  const MOTION_TRIGGER_ENERGY = 4.8;       // Light, comfortable threshold (effortless quick shake)
+  const MOTION_DECAY = 0.90;               // Smooth energy accumulation across frames
+  const REVERSAL_THRESHOLD = 1.2;          // Sensitive directional change threshold
   const DRAW_COOLDOWN_MS = 2500;
 
   const mobileSensorPill = document.getElementById('mobileSensorPill');
@@ -763,7 +763,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     accumulatedMotion = (accumulatedMotion * MOTION_DECAY) + frameMag;
 
-    if (accumulatedMotion >= MOTION_TRIGGER_ENERGY && reversalCount >= 2) {
+    if (accumulatedMotion >= MOTION_TRIGGER_ENERGY && reversalCount >= 1) {
       accumulatedMotion = 0;
       reversalCount = 0;
       lastDrawTime = Date.now();
