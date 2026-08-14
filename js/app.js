@@ -1,16 +1,100 @@
 // StarJar — Bundled App (Safari & Cross-Platform Compatible)
 /**
  * storage.js
- * Manages local storage persistence, activity items, completion history,
- * user authentication state, intelligent cross-device merging, and cloud sync hooks.
+ * Manages local storage persistence, multi-jar creation, custom jar naming,
+ * jar-specific activities and completion histories, user authentication state,
+ * intelligent cross-device merging, and cloud sync hooks with offline/file-protocol resilience.
  */
 
 const STORAGE_KEYS = {
   ACTIVITIES: 'starjar_activities',
   HISTORY: 'starjar_history',
+  JARS: 'starjar_jars',
+  ACTIVE_JAR_ID: 'starjar_active_jar_id',
   USER: 'starjar_user',
   ACCOUNTS: 'starjar_accounts_db',
   LAST_SYNCED: 'starjar_last_synced'
+};
+
+// Starter Templates for instant jar creation
+const JAR_TEMPLATES = {
+  creative: {
+    name: 'Creative & Art Studio',
+    description: 'Spark your imagination with artistic experiments, sketches, and writing prompts.',
+    icon: '',
+    theme: 'pink',
+    activities: [
+      { id: 't-cr-1', title: 'Sketch a cozy dream room in 1-point perspective', link: 'https://www.youtube.com/results?search_query=perspective+room+sketching', time: 15, type: 'creative', color: 'star_pink.png' },
+      { id: 't-cr-2', title: 'Write a whimsical 50-word micro poem', link: 'https://poets.org', time: 5, type: 'creative', color: 'star_yellow.png' },
+      { id: 't-cr-3', title: 'Design a cute sticker concept on paper or tablet', link: 'https://pinterest.com', time: 30, type: 'creative', color: 'star_purple.png' },
+      { id: 't-cr-4', title: 'Watercolor or digital gradient abstract splash', link: 'https://youtube.com', time: 20, type: 'creative', color: 'star_teal.png' },
+      { id: 't-cr-5', title: 'Create a mood board for your ideal season', link: 'https://pinterest.com', time: 15, type: 'creative', color: 'star_lavender.png' },
+      { id: 't-cr-6', title: 'Fold 3 physical origami lucky paper stars', link: 'https://youtube.com', time: 10, type: 'creative', color: 'star_blue.png' }
+    ]
+  },
+  selfcare: {
+    name: 'Self-Care & Mindfulness',
+    description: 'Nourish your mind and body with calming rituals, gentle movement, and rest.',
+    icon: '',
+    theme: 'teal',
+    activities: [
+      { id: 't-sc-1', title: '5-minute deep 4-7-8 breathing meditation', link: '', time: 5, type: 'both', color: 'star_teal.png' },
+      { id: 't-sc-2', title: 'Brew a calming cup of chamomile or herbal tea screen-free', link: '', time: 10, type: 'fun', color: 'star_yellow.png' },
+      { id: 't-sc-3', title: 'Write down 3 specific things you appreciate today', link: '', time: 5, type: 'creative', color: 'star_pink.png' },
+      { id: 't-sc-4', title: '15-minute gentle full-body stretch & tension release', link: 'https://youtube.com', time: 15, type: 'productive', color: 'star_lavender.png' },
+      { id: 't-sc-5', title: 'Step outside for a 15-minute fresh air mindful walk', link: '', time: 15, type: 'both', color: 'star_green.png' },
+      { id: 't-sc-6', title: 'Put on a soothing playlist and rest your eyes in silence', link: 'https://spotify.com', time: 10, type: 'fun', color: 'star_blue.png' }
+    ]
+  },
+  productivity: {
+    name: 'Focus & Productivity',
+    description: 'Quick wins and high-impact administrative resets to declutter your space and mind.',
+    icon: '',
+    theme: 'blue',
+    activities: [
+      { id: 't-pr-1', title: 'Clear and wipe down your workspace surface', link: '', time: 10, type: 'productive', color: 'star_blue.png' },
+      { id: 't-pr-2', title: 'Delete 25 unwanted emails & clear notifications', link: '', time: 10, type: 'productive', color: 'star_teal.png' },
+      { id: 't-pr-3', title: '25-minute Pomodoro focus sprint on your top priority task', link: '', time: 30, type: 'productive', color: 'star_purple.png' },
+      { id: 't-pr-4', title: 'Organize digital downloads and browser bookmarks', link: '', time: 15, type: 'productive', color: 'star_yellow.png' },
+      { id: 't-pr-5', title: 'Plan and write your top 3 goals for tomorrow', link: '', time: 5, type: 'productive', color: 'star_pink.png' },
+      { id: 't-pr-6', title: 'Drink a tall glass of water and do 10 posture resets', link: '', time: 5, type: 'both', color: 'star_lavender.png' }
+    ]
+  },
+  datenight: {
+    name: 'Date Night & Connections',
+    description: 'Memorable, fun activities and bonding ideas for couples, friends, and loved ones.',
+    icon: '',
+    theme: 'pink',
+    activities: [
+      { id: 't-dn-1', title: 'Bake a batch of warm homemade cookies together', link: 'https://allrecipes.com', time: 45, type: 'fun', color: 'star_pink.png' },
+      { id: 't-dn-2', title: 'Watch a nostalgic movie or cozy indie film', link: '', time: 90, type: 'fun', color: 'star_purple.png' },
+      { id: 't-dn-3', title: 'Play a head-to-head card game or tabletop board game', link: '', time: 30, type: 'fun', color: 'star_yellow.png' },
+      { id: 't-dn-4', title: 'Go sunset watching or stargazing with hot cocoa', link: '', time: 30, type: 'both', color: 'star_lavender.png' },
+      { id: 't-dn-5', title: 'Cook a brand-new foreign cuisine recipe from scratch', link: 'https://youtube.com', time: 60, type: 'creative', color: 'star_teal.png' },
+      { id: 't-dn-6', title: 'Create a shared travel and adventure bucket list', link: '', time: 20, type: 'creative', color: 'star_blue.png' }
+    ]
+  },
+  adventure: {
+    name: 'Fun & Boredom Busters',
+    description: 'Exciting, spontaneous ideas when you are bored and looking for something new.',
+    icon: '',
+    theme: 'yellow',
+    activities: [
+      { id: 't-av-1', title: 'Listen to a critically acclaimed music album from a genre you never explore', link: 'https://spotify.com', time: 40, type: 'fun', color: 'star_yellow.png' },
+      { id: 't-av-2', title: 'Learn 5 practical conversational phrases in a new language', link: 'https://duolingo.com', time: 10, type: 'both', color: 'star_teal.png' },
+      { id: 't-av-3', title: 'Build a super cozy living room blanket & pillow fort', link: '', time: 20, type: 'fun', color: 'star_pink.png' },
+      { id: 't-av-4', title: 'Go on a 15-minute neighborhood photo scavenger hunt', link: '', time: 15, type: 'creative', color: 'star_blue.png' },
+      { id: 't-av-5', title: 'Make a personalized upbeat playlist for a good friend', link: 'https://spotify.com', time: 15, type: 'fun', color: 'star_purple.png' },
+      { id: 't-av-6', title: 'Try an intriguing mystery YouTube documentary rabbit hole', link: 'https://youtube.com', time: 25, type: 'fun', color: 'star_lavender.png' }
+    ]
+  },
+  blank: {
+    name: 'Custom Jar',
+    description: 'A brand new empty jar ready for your own custom inspiration and activities.',
+    icon: '',
+    theme: 'purple',
+    activities: []
+  }
 };
 
 // Default sample activities to populate jar if empty
@@ -77,100 +161,326 @@ class StorageService {
     this.initStorage();
   }
 
+  getApiBase() {
+    if (typeof window === 'undefined') return '';
+    if (window.location.protocol === 'file:' || !window.location.host) {
+      return 'http://localhost:8000';
+    }
+    return '';
+  }
+
   initStorage() {
-    if (!localStorage.getItem(STORAGE_KEYS.ACTIVITIES)) {
-      localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(DEFAULT_ACTIVITIES));
+    let legacyActivities = null;
+    let legacyHistory = null;
+    try {
+      const actData = localStorage.getItem(STORAGE_KEYS.ACTIVITIES);
+      if (actData) legacyActivities = JSON.parse(actData);
+    } catch (e) { console.error('Error reading legacy activities', e); }
+
+    try {
+      const histData = localStorage.getItem(STORAGE_KEYS.HISTORY);
+      if (histData) legacyHistory = JSON.parse(histData);
+    } catch (e) { console.error('Error reading legacy history', e); }
+
+    let jars = null;
+    try {
+      const jarsData = localStorage.getItem(STORAGE_KEYS.JARS);
+      if (jarsData) jars = JSON.parse(jarsData);
+    } catch (e) { console.error('Error reading jars', e); }
+
+    if (!Array.isArray(jars) || jars.length === 0) {
+      const initialActivities = (Array.isArray(legacyActivities) && legacyActivities.length > 0)
+        ? legacyActivities
+        : DEFAULT_ACTIVITIES;
+      const initialHistory = Array.isArray(legacyHistory) ? legacyHistory : [];
+
+      const defaultJar = {
+        id: 'jar-default',
+        name: 'Main Star Jar',
+        description: 'Creative, productive, and mindful activities',
+        icon: '',
+        theme: 'purple',
+        activities: initialActivities,
+        history: initialHistory,
+        createdAt: new Date().toISOString(),
+        isDefault: true
+      };
+
+      jars = [defaultJar];
+      localStorage.setItem(STORAGE_KEYS.JARS, JSON.stringify(jars));
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_JAR_ID, defaultJar.id);
     }
-    if (!localStorage.getItem(STORAGE_KEYS.HISTORY)) {
-      localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify([]));
+
+    let activeJarId = localStorage.getItem(STORAGE_KEYS.ACTIVE_JAR_ID);
+    if (!activeJarId || !jars.some(j => j.id === activeJarId)) {
+      activeJarId = jars[0].id;
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_JAR_ID, activeJarId);
     }
+
+    this.syncLegacyMirrors();
+
     if (!localStorage.getItem(STORAGE_KEYS.ACCOUNTS)) {
       localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify([]));
     }
   }
 
-  // Activity Management
-  getActivities() {
+  syncLegacyMirrors() {
+    const activeJar = this.getActiveJar();
+    if (activeJar) {
+      localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(activeJar.activities || []));
+      localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(activeJar.history || []));
+    }
+  }
+
+  getJars() {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.ACTIVITIES);
-      return data ? JSON.parse(data) : [];
+      const data = localStorage.getItem(STORAGE_KEYS.JARS);
+      const jars = data ? JSON.parse(data) : [];
+      return Array.isArray(jars) && jars.length > 0 ? jars : [];
     } catch (e) {
-      console.error('Failed to load activities', e);
+      console.error('Failed to load jars', e);
       return [];
     }
   }
 
-  saveActivities(activities) {
-    localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(activities));
+  saveJars(jars) {
+    localStorage.setItem(STORAGE_KEYS.JARS, JSON.stringify(jars));
+    this.syncLegacyMirrors();
     this.triggerSync();
   }
 
-  addActivity(activity) {
-    const activities = this.getActivities();
+  getActiveJarId() {
+    return localStorage.getItem(STORAGE_KEYS.ACTIVE_JAR_ID) || (this.getJars()[0] ? this.getJars()[0].id : 'jar-default');
+  }
+
+  getActiveJar() {
+    const jars = this.getJars();
+    const activeId = this.getActiveJarId();
+    return jars.find(j => j.id === activeId) || jars[0] || null;
+  }
+
+  setActiveJar(jarId) {
+    const jars = this.getJars();
+    const exists = jars.some(j => j.id === jarId);
+    if (exists) {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_JAR_ID, jarId);
+      this.syncLegacyMirrors();
+      this.notifySyncListeners();
+      this.triggerSync();
+      return true;
+    }
+    return false;
+  }
+
+  createJar({ name, description = '', icon = '', theme = 'purple', template = 'blank' }) {
+    const jars = this.getJars();
+    const templateData = JAR_TEMPLATES[template] || JAR_TEMPLATES.blank;
+    
+    let starterActivities = [];
+    if (templateData && templateData.activities && templateData.activities.length > 0) {
+      starterActivities = templateData.activities.map((a, idx) => ({
+        ...a,
+        id: `act-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 5)}`,
+        createdAt: new Date().toISOString()
+      }));
+    }
+
+    const cleanName = (name || '').trim() || templateData.name || 'New Star Jar';
+    const cleanDesc = (description || '').trim() || templateData.description || '';
+
+    const newJar = {
+      id: 'jar-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+      name: cleanName,
+      description: cleanDesc,
+      icon: icon || '',
+      theme: theme || templateData.theme || 'purple',
+      activities: starterActivities,
+      history: [],
+      createdAt: new Date().toISOString(),
+      isDefault: jars.length === 0
+    };
+
+    jars.push(newJar);
+    this.saveJars(jars);
+    this.setActiveJar(newJar.id);
+    return newJar;
+  }
+
+  updateJar(jarId, updatedFields) {
+    const jars = this.getJars();
+    const idx = jars.findIndex(j => j.id === jarId);
+    if (idx !== -1) {
+      const allowed = ['name', 'description', 'icon', 'theme'];
+      allowed.forEach(field => {
+        if (updatedFields[field] !== undefined) {
+          jars[idx][field] = updatedFields[field];
+        }
+      });
+      this.saveJars(jars);
+      this.notifySyncListeners();
+      return jars[idx];
+    }
+    return null;
+  }
+
+  deleteJar(jarId) {
+    const jars = this.getJars();
+    if (jars.length <= 1) {
+      throw new Error('You must keep at least one Star Jar.');
+    }
+
+    const remaining = jars.filter(j => j.id !== jarId);
+    const activeId = this.getActiveJarId();
+
+    let newActiveId = activeId;
+    if (activeId === jarId) {
+      newActiveId = remaining[0].id;
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_JAR_ID, newActiveId);
+    }
+
+    this.saveJars(remaining);
+    this.notifySyncListeners();
+    return remaining;
+  }
+
+  getActivities(jarId = null) {
+    const jars = this.getJars();
+    const targetJarId = jarId || this.getActiveJarId();
+    const jar = jars.find(j => j.id === targetJarId);
+    return jar && Array.isArray(jar.activities) ? jar.activities : [];
+  }
+
+  saveActivities(activities, jarId = null) {
+    const jars = this.getJars();
+    const targetJarId = jarId || this.getActiveJarId();
+    const idx = jars.findIndex(j => j.id === targetJarId);
+    if (idx !== -1) {
+      jars[idx].activities = activities;
+      this.saveJars(jars);
+    }
+  }
+
+  addActivity(activity, jarId = null) {
+    const targetJarId = jarId || this.getActiveJarId();
+    const activities = this.getActivities(targetJarId);
     activities.push(activity);
-    this.saveActivities(activities);
+    this.saveActivities(activities, targetJarId);
     return activity;
   }
 
-  updateActivity(id, updatedFields) {
-    const activities = this.getActivities();
+  updateActivity(id, updatedFields, jarId = null) {
+    const targetJarId = jarId || this.getActiveJarId();
+    const activities = this.getActivities(targetJarId);
     const index = activities.findIndex(a => a.id === id);
     if (index !== -1) {
       activities[index] = { ...activities[index], ...updatedFields };
-      this.saveActivities(activities);
+      this.saveActivities(activities, targetJarId);
       return activities[index];
     }
     return null;
   }
 
-  removeActivity(id) {
-    const activities = this.getActivities().filter(a => a.id !== id);
-    this.saveActivities(activities);
+  removeActivity(id, jarId = null) {
+    const targetJarId = jarId || this.getActiveJarId();
+    const activities = this.getActivities(targetJarId).filter(a => a.id !== id);
+    this.saveActivities(activities, targetJarId);
     return activities;
   }
 
-  // History & Archive Management
-  getHistory() {
-    try {
-      const data = localStorage.getItem(STORAGE_KEYS.HISTORY);
-      return data ? JSON.parse(data) : [];
-    } catch (e) {
-      console.error('Failed to load history', e);
-      return [];
-    }
+  moveActivity(activityId, fromJarId, toJarId) {
+    if (fromJarId === toJarId) return false;
+    const jars = this.getJars();
+    const fromJar = jars.find(j => j.id === fromJarId);
+    const toJar = jars.find(j => j.id === toJarId);
+    if (!fromJar || !toJar) return false;
+
+    const actIndex = fromJar.activities.findIndex(a => a.id === activityId);
+    if (actIndex === -1) return false;
+
+    const [movedAct] = fromJar.activities.splice(actIndex, 1);
+    toJar.activities.push(movedAct);
+    this.saveJars(jars);
+    this.notifySyncListeners();
+    return true;
   }
 
-  logCompletion(activity, keptInJar = true) {
-    const history = this.getHistory();
+  getHistory(jarId = null) {
+    const jars = this.getJars();
+    if (jarId === 'all') {
+      const allHist = [];
+      jars.forEach(jar => {
+        (jar.history || []).forEach(entry => {
+          allHist.push({
+            ...entry,
+            jarId: jar.id,
+            jarName: jar.name,
+            jarIcon: jar.icon || ''
+          });
+        });
+      });
+      return allHist.sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0));
+    }
+
+    const targetJarId = jarId || this.getActiveJarId();
+    const jar = jars.find(j => j.id === targetJarId);
+    const hist = jar && Array.isArray(jar.history) ? jar.history : [];
+    return hist.map(entry => ({
+      ...entry,
+      jarId: jar ? jar.id : targetJarId,
+      jarName: jar ? jar.name : 'Star Jar',
+      jarIcon: jar ? (jar.icon || '') : ''
+    }));
+  }
+
+  logCompletion(activity, keptInJar = true, jarId = null) {
+    const targetJarId = jarId || this.getActiveJarId();
+    const activeJar = this.getActiveJar();
+    const jars = this.getJars();
+    const jar = jars.find(j => j.id === targetJarId) || activeJar;
+
     const entry = {
-      id: 'hist-' + Date.now(),
+      id: 'hist-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
       activityId: activity.id,
       title: activity.title,
       type: activity.type,
       timeSpent: activity.time,
       link: activity.link || '',
       keptInJar: keptInJar,
+      jarId: targetJarId,
+      jarName: jar ? jar.name : 'Main Star Jar',
       completedAt: new Date().toISOString()
     };
-    history.unshift(entry);
-    localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(history));
-    this.triggerSync();
+
+    if (jar) {
+      if (!Array.isArray(jar.history)) jar.history = [];
+      jar.history.unshift(entry);
+      this.saveJars(jars);
+    }
     return entry;
   }
 
-  clearHistory() {
-    localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify([]));
-    this.triggerSync();
+  clearHistory(jarId = null) {
+    const jars = this.getJars();
+    if (jarId === 'all') {
+      jars.forEach(j => { j.history = []; });
+      this.saveJars(jars);
+      return;
+    }
+
+    const targetJarId = jarId || this.getActiveJarId();
+    const jar = jars.find(j => j.id === targetJarId);
+    if (jar) {
+      jar.history = [];
+      this.saveJars(jars);
+    }
   }
 
-  // Helper to check if activities list is only the initial default sample set
   isDefaultSampleList(list) {
     if (!Array.isArray(list) || list.length === 0) return true;
     if (list.length !== DEFAULT_ACTIVITIES.length) return false;
     return list.every((item, i) => item.id === DEFAULT_ACTIVITIES[i].id);
   }
 
-  // Intelligent Merge Helpers (Preserves local custom stars when logging in)
   mergeActivities(localList, cloudList) {
     if (!cloudList || !Array.isArray(cloudList) || cloudList.length === 0) {
       return localList || [];
@@ -184,7 +494,6 @@ class StorageService {
     const cloudIds = new Set(cloudList.map(a => a.id));
 
     for (const localItem of localList) {
-      // Don't merge generic sample stars into established cloud account
       if (localItem.id && String(localItem.id).startsWith('sample-')) continue;
       const cleanTitle = (localItem.title || '').trim().toLowerCase();
       if (!cloudTitles.has(cleanTitle) && !cloudIds.has(localItem.id)) {
@@ -216,7 +525,46 @@ class StorageService {
     return merged;
   }
 
-  // User Accounts & Authentication (Local + Cloud API Sync)
+  mergeJars(localJars, cloudJars) {
+    if (!cloudJars || !Array.isArray(cloudJars) || cloudJars.length === 0) {
+      return localJars || [];
+    }
+    if (!localJars || !Array.isArray(localJars) || localJars.length === 0) {
+      return cloudJars;
+    }
+
+    const merged = [];
+    const cloudMap = new Map(cloudJars.map(j => [j.id, j]));
+    const cloudNameMap = new Map(cloudJars.map(j => [(j.name || '').trim().toLowerCase(), j]));
+
+    for (const lJar of localJars) {
+      const cleanName = (lJar.name || '').trim().toLowerCase();
+      let matchedCloud = cloudMap.get(lJar.id) || cloudNameMap.get(cleanName);
+
+      if (matchedCloud) {
+        merged.push({
+          ...matchedCloud,
+          name: lJar.name || matchedCloud.name,
+          description: lJar.description || matchedCloud.description,
+          icon: lJar.icon || matchedCloud.icon || '',
+          theme: lJar.theme || matchedCloud.theme,
+          activities: this.mergeActivities(lJar.activities || [], matchedCloud.activities || []),
+          history: this.mergeHistory(lJar.history || [], matchedCloud.history || [])
+        });
+        cloudMap.delete(matchedCloud.id);
+        cloudNameMap.delete((matchedCloud.name || '').trim().toLowerCase());
+      } else {
+        merged.push(lJar);
+      }
+    }
+
+    for (const cJar of cloudMap.values()) {
+      merged.push(cJar);
+    }
+
+    return merged;
+  }
+
   getCurrentUser() {
     try {
       const user = localStorage.getItem(STORAGE_KEYS.USER);
@@ -235,18 +583,21 @@ class StorageService {
     }
   }
 
-  saveLocalAccount(user, password, activities = null, history = null) {
+  saveLocalAccount(user, password, jars = null) {
     const accounts = this.getRegisteredAccounts();
     const cleanEmail = (user.email || '').trim().toLowerCase();
     const idx = accounts.findIndex(acc => (acc.email || '').toLowerCase() === cleanEmail);
+    const currentJars = jars || user.jars || this.getJars();
+    
     const accData = {
       id: user.id || 'usr-' + Date.now(),
       email: cleanEmail,
       password: password || (idx !== -1 ? accounts[idx].password : ''),
       name: user.name || cleanEmail.split('@')[0],
       createdAt: user.createdAt || new Date().toISOString(),
-      activities: activities || user.activities || this.getActivities(),
-      history: history || user.history || this.getHistory()
+      jars: currentJars,
+      activities: this.getActivities(),
+      history: this.getHistory()
     };
 
     if (idx !== -1) {
@@ -261,28 +612,48 @@ class StorageService {
     const cleanEmail = email.trim().toLowerCase();
     const cleanPassword = password.trim();
     const cleanName = name.trim() || cleanEmail.split('@')[0];
+    const currentJars = this.getJars();
     const currentActivities = this.getActivities();
     const currentHistory = this.getHistory();
+    let user = null;
 
-    const res = await fetch('/api/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    try {
+      const res = await fetch(`${this.getApiBase()}/api/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          password: cleanPassword,
+          name: cleanName,
+          jars: currentJars,
+          activities: currentActivities,
+          history: currentHistory
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to create account.');
+      }
+      user = data.user;
+    } catch (err) {
+      if (err.message && err.message.toLowerCase().includes('already exists')) {
+        throw err;
+      }
+      // Fallback to local accounts database for offline / file:// usage
+      const accounts = this.getRegisteredAccounts();
+      if (accounts.some(a => (a.email || '').toLowerCase() === cleanEmail)) {
+        throw new Error('An account with this email already exists.');
+      }
+      user = {
+        id: 'usr-' + Date.now(),
         email: cleanEmail,
-        password: cleanPassword,
         name: cleanName,
-        activities: currentActivities,
-        history: currentHistory
-      })
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      throw new Error(data.error || 'Failed to create account.');
+        jars: currentJars
+      };
     }
 
-    const user = data.user;
     this.setCurrentUser({ ...user, password: cleanPassword });
-    this.saveLocalAccount(user, cleanPassword, user.activities, user.history);
+    this.saveLocalAccount(user, cleanPassword, user.jars || currentJars);
     this.setLastSynced(Date.now());
     return user;
   }
@@ -290,37 +661,59 @@ class StorageService {
   async loginUser(email, password) {
     const cleanEmail = email.trim().toLowerCase();
     const cleanPassword = password.trim();
-    const currentLocalActivities = this.getActivities();
-    const currentLocalHistory = this.getHistory();
+    const currentLocalJars = this.getJars();
+    let user = null;
+    let cloudJars = [];
 
-    const res = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: cleanEmail, password: cleanPassword })
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      throw new Error(data.error || 'Invalid email or password.');
+    try {
+      const res = await fetch(`${this.getApiBase()}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, password: cleanPassword })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Invalid email or password.');
+      }
+      user = data.user;
+      cloudJars = user.jars || [];
+    } catch (err) {
+      if (err.message && (err.message.toLowerCase().includes('password') || err.message.toLowerCase().includes('invalid email'))) {
+        throw err;
+      }
+
+      // Offline / file protocol fallback: check local registered accounts
+      const accounts = this.getRegisteredAccounts();
+      const localAcc = accounts.find(a => (a.email || '').toLowerCase() === cleanEmail);
+      if (localAcc) {
+        if (localAcc.password && localAcc.password !== cleanPassword) {
+          throw new Error('Invalid email or password.');
+        }
+        user = {
+          id: localAcc.id,
+          email: localAcc.email,
+          name: localAcc.name,
+          jars: localAcc.jars || currentLocalJars
+        };
+        cloudJars = localAcc.jars || [];
+      } else {
+        if (err.message && err.message.toLowerCase().includes('no account found')) {
+          throw err;
+        }
+        throw new Error('No account found with this email. Please click "Sign Up" below.');
+      }
     }
 
-    const user = data.user;
-    const cloudActivities = user.activities || [];
-    const cloudHistory = user.history || [];
+    const mergedJars = this.mergeJars(currentLocalJars, cloudJars);
 
-    // Intelligently merge any local custom stars with cloud stars
-    const mergedActivities = this.mergeActivities(currentLocalActivities, cloudActivities);
-    const mergedHistory = this.mergeHistory(currentLocalHistory, cloudHistory);
-
-    localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(mergedActivities));
-    localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(mergedHistory));
-    this.setCurrentUser({ ...user, password });
-    this.saveLocalAccount(user, password, mergedActivities, mergedHistory);
+    this.saveJars(mergedJars);
+    this.setCurrentUser({ ...user, password: cleanPassword });
+    this.saveLocalAccount(user, cleanPassword, mergedJars);
     this.setLastSynced(Date.now());
 
-    // If local device had extra custom stars, push merged set to cloud immediately
-    if (mergedActivities.length !== cloudActivities.length || mergedHistory.length !== cloudHistory.length) {
+    try {
       await this.triggerSync();
-    }
+    } catch {}
     return user;
   }
 
@@ -344,13 +737,14 @@ class StorageService {
     const user = this.getCurrentUser();
     if (!user || !user.email) return;
 
+    const jars = this.getJars();
     const activities = this.getActivities();
     const history = this.getHistory();
 
-    this.saveLocalAccount(user, user.password, activities, history);
+    this.saveLocalAccount(user, user.password, jars);
 
     try {
-      const res = await fetch('/api/sync', {
+      const res = await fetch(`${this.getApiBase()}/api/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -358,6 +752,7 @@ class StorageService {
           email: user.email,
           password: user.password,
           name: user.name,
+          jars,
           activities,
           history
         })
@@ -366,35 +761,32 @@ class StorageService {
         this.setLastSynced(Date.now());
       }
     } catch (e) {
-      console.warn('Cloud sync background warning:', e);
+      // Graceful background sync catch
     }
   }
 
-  // Cross-device automatic sync from cloud
   async syncFromCloud() {
     const user = this.getCurrentUser();
     if (!user || !user.email) return { success: false, reason: 'not_logged_in' };
 
     try {
-      const res = await fetch(`/api/user?email=${encodeURIComponent(user.email)}`);
+      const res = await fetch(`${this.getApiBase()}/api/user?email=${encodeURIComponent(user.email)}`);
       if (!res.ok) {
         throw new Error('Failed to fetch user data from cloud.');
       }
       const data = await res.json();
       if (data.user) {
-        const cloudActivities = data.user.activities || [];
-        const cloudHistory = data.user.history || [];
-
-        localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(cloudActivities));
-        localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(cloudHistory));
-        this.saveLocalAccount(data.user, user.password, cloudActivities, cloudHistory);
+        const cloudJars = data.user.jars || [];
+        if (cloudJars.length > 0) {
+          this.saveJars(cloudJars);
+        }
+        this.saveLocalAccount(data.user, user.password, cloudJars);
         this.setLastSynced(Date.now());
         this.notifySyncListeners();
-        return { success: true, activitiesCount: cloudActivities.length, historyCount: cloudHistory.length };
+        return { success: true, jarsCount: cloudJars.length };
       }
       return { success: false, reason: 'no_user_returned' };
     } catch (err) {
-      console.warn('Cloud sync error:', err);
       return { success: false, error: err.message };
     }
   }
@@ -438,7 +830,8 @@ class StorageService {
 /**
  * jar.js
  * High-performance HTML5 Canvas physics engine for rendering origami stars
- * inside the glass activity jar with realistic dropping, stacking, and shaking animations.
+ * inside the glass activity jar with realistic dropping, stacking, and stationary resting physics.
+ * Supports unlimited user prompts while keeping the visual jar display beautifully capped at 100 stars.
  */
 
 const STAR_ASSETS = {
@@ -464,8 +857,6 @@ class JarEngine {
     this.initCanvasDimensions();
     this.loadImages();
 
-    // Re-init after short delay to catch correct mobile dimensions
-    // (iOS Safari may report 0 on first paint)
     setTimeout(() => this.initCanvasDimensions(), 200);
     setTimeout(() => this.initCanvasDimensions(), 600);
 
@@ -573,7 +964,6 @@ class JarEngine {
       minX = neckLeft + starRadius;
       maxX = neckRight - starRadius;
     } else if (y < bodyTop + 40) {
-      // Curved shoulder transition
       const t = (y - neckBottom) / (bodyTop + 40 - neckBottom);
       const ease = t * t * (3 - 2 * t);
       const left = neckLeft + (bodyLeft - neckLeft) * ease;
@@ -581,11 +971,9 @@ class JarEngine {
       minX = left + starRadius;
       maxX = right - starRadius;
     } else if (y <= bodyBottom - 30) {
-      // Main jar body
       minX = bodyLeft + starRadius;
       maxX = bodyRight - starRadius;
     } else {
-      // Rounded bottom corners
       const t = Math.min(1, Math.max(0, (y - (bodyBottom - 30)) / 30));
       const inset = (1 - Math.sqrt(Math.max(0, 1 - t * t))) * 32;
       minX = bodyLeft + inset + starRadius;
@@ -650,8 +1038,7 @@ class JarEngine {
     return positions;
   }
 
-  syncStarsWithActivities(activities) {
-    // Keep visual rendering capped at MAX_VISUAL_STARS (100 stars)
+  syncStarsWithActivities(activities, forceReset = false) {
     const visualActivities = activities.length > MAX_VISUAL_STARS
       ? activities.slice(activities.length - MAX_VISUAL_STARS)
       : activities;
@@ -664,6 +1051,8 @@ class JarEngine {
     const stationaryPositions = this.calculateStationaryPositions(visualActivities.length);
 
     const newStarsList = [];
+    let hasActiveStar = false;
+
     visualActivities.forEach((act, index) => {
       const pos = stationaryPositions[index] || {
         x: this.width / 2,
@@ -675,7 +1064,7 @@ class JarEngine {
       if (existingMap.has(act.id)) {
         const s = existingMap.get(act.id);
         s.radius = targetRadius;
-        if (!this.isSimulating) {
+        if (forceReset) {
           s.x = pos.x;
           s.y = pos.y;
           s.angle = pos.angle;
@@ -683,31 +1072,58 @@ class JarEngine {
           s.vy = 0;
           s.vAngle = 0;
           s.isSleeping = true;
+        } else if (!s.isSleeping) {
+          hasActiveStar = true;
         }
         newStarsList.push(s);
       } else {
         const imageName = act.color || this.getRandomImageForType(act.type);
-        const star = {
-          id: 'star-p-' + Math.random().toString(36).substr(2, 9),
-          activityId: act.id,
-          activity: act,
-          imageName: imageName,
-          x: pos.x,
-          y: pos.y,
-          vx: 0,
-          vy: 0,
-          radius: targetRadius,
-          angle: pos.angle,
-          vAngle: 0,
-          isSleeping: true,
-          isGlow: false
-        };
-        newStarsList.push(star);
+        if (forceReset) {
+          const star = {
+            id: 'star-p-' + Math.random().toString(36).substr(2, 9),
+            activityId: act.id,
+            activity: act,
+            imageName: imageName,
+            x: pos.x,
+            y: pos.y,
+            vx: 0,
+            vy: 0,
+            radius: targetRadius,
+            angle: pos.angle,
+            vAngle: 0,
+            isSleeping: true,
+            isGlow: false
+          };
+          newStarsList.push(star);
+        } else {
+          // Drop new star with physics from top neck
+          const startX = this.width / 2 + (Math.random() - 0.5) * 20;
+          const startY = this.jarBounds.neckTop - 15;
+          const star = {
+            id: 'star-p-' + Math.random().toString(36).substr(2, 9),
+            activityId: act.id,
+            activity: act,
+            imageName: imageName,
+            x: startX,
+            y: startY,
+            vx: (Math.random() - 0.5) * 1.5,
+            vy: 4.5 + Math.random() * 1.5,
+            radius: targetRadius,
+            angle: Math.random() * Math.PI * 2,
+            vAngle: (Math.random() - 0.5) * 0.1,
+            isSleeping: false,
+            isGlow: true
+          };
+          newStarsList.push(star);
+          hasActiveStar = true;
+        }
       }
     });
 
     this.stars = newStarsList;
-    if (!this.isShaking) {
+    if (hasActiveStar) {
+      this.isSimulating = true;
+    } else if (forceReset && !this.isShaking) {
       this.isSimulating = false;
     }
   }
@@ -756,12 +1172,10 @@ class JarEngine {
       };
       this.stars.push(star);
 
-      // If exceeding MAX_VISUAL_STARS (100), trim the oldest rendered star
       if (this.stars.length > MAX_VISUAL_STARS) {
         this.stars.shift();
       }
 
-      // Wake up stars so the incoming star settles naturally into the stack
       this.stars.forEach(s => {
         s.isSleeping = false;
         s.radius = targetRadius;
@@ -804,7 +1218,6 @@ class JarEngine {
     this.isSimulating = true;
     this.shakeIntensity = 1.0;
 
-    // Wake up all stars and apply upward chaotic impulses
     this.stars.forEach(star => {
       star.isSleeping = false;
       star.vy -= 9 + Math.random() * 10;
@@ -837,7 +1250,6 @@ class JarEngine {
     const airDamping = 0.94;
     let allResting = !this.isShaking;
 
-    // Step 1: Integrate active stars
     for (let i = 0; i < this.stars.length; i++) {
       const s = this.stars[i];
       if (s.isSleeping) continue;
@@ -856,10 +1268,8 @@ class JarEngine {
       }
     }
 
-    // Step 2: Multi-pass Position-Based Dynamics (PBD) Constraint Solver
     const SUB_STEPS = 6;
     for (let step = 0; step < SUB_STEPS; step++) {
-      // Star-to-star distance constraints
       for (let i = 0; i < this.stars.length; i++) {
         const s1 = this.stars[i];
         for (let j = i + 1; j < this.stars.length; j++) {
@@ -874,13 +1284,11 @@ class JarEngine {
             const nx = dx / dist;
             const ny = dy / dist;
 
-            // Push apart positions directly (relaxation)
             s1.x -= nx * overlap;
             s1.y -= ny * overlap;
             s2.x += nx * overlap;
             s2.y += ny * overlap;
 
-            // Inelastic collision damping & Coulomb tangential friction
             const rvx = s2.vx - s1.vx;
             const rvy = s2.vy - s1.vy;
             const normalVel = rvx * nx + rvy * ny;
@@ -902,19 +1310,16 @@ class JarEngine {
               s2.vy -= friction * ty;
             }
 
-            // Wake up neighbor if sleeping
             if (!s1.isSleeping && s2.isSleeping) s2.isSleeping = false;
             if (!s2.isSleeping && s1.isSleeping) s1.isSleeping = false;
           }
         }
       }
 
-      // Jar geometry containment constraints
       for (let i = 0; i < this.stars.length; i++) {
         const s = this.stars[i];
         const bounds = this.getJarBoundariesAtY(s.y, s.radius);
 
-        // Floor collision
         if (s.y > bounds.maxY) {
           s.y = bounds.maxY;
           if (Math.abs(s.vy) < 0.75) {
@@ -926,7 +1331,6 @@ class JarEngine {
           s.vAngle *= 0.8;
         }
 
-        // Left / Right wall collisions
         if (s.x < bounds.minX) {
           s.x = bounds.minX;
           if (Math.abs(s.vx) < 0.5) {
@@ -947,7 +1351,6 @@ class JarEngine {
       }
     }
 
-    // Step 3: Sleep / Settling check
     if (!this.isShaking) {
       let activeCount = 0;
       for (let i = 0; i < this.stars.length; i++) {
@@ -994,7 +1397,6 @@ class JarEngine {
     this.ctx.closePath();
     this.ctx.fill();
 
-    // Cork/Lid Top
     this.ctx.fillStyle = 'rgba(212, 163, 115, 0.85)';
     this.ctx.beginPath();
     this.ctx.roundRect(neckLeft - 6, neckTop - 14, (neckRight - neckLeft) + 12, 18, 5);
@@ -1011,7 +1413,6 @@ class JarEngine {
 
     this.ctx.save();
 
-    // Outer Glass Rim stroke
     this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
     this.ctx.lineWidth = 3;
     this.ctx.beginPath();
@@ -1028,7 +1429,6 @@ class JarEngine {
     this.ctx.closePath();
     this.ctx.stroke();
 
-    // Glossy reflection stripe on left edge
     this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
     this.ctx.lineWidth = 6;
     this.ctx.lineCap = 'round';
@@ -1037,7 +1437,6 @@ class JarEngine {
     this.ctx.lineTo(bodyLeft + 12, bodyBottom - 45);
     this.ctx.stroke();
 
-    // Smaller curved highlight at the bottom right
     this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
     this.ctx.lineWidth = 4;
     this.ctx.beginPath();
@@ -1051,7 +1450,6 @@ class JarEngine {
   animate() {
     this.ctx.clearRect(0, 0, this.width, this.height);
 
-    // Apply jar shaking offset
     this.ctx.save();
     if (this.isShaking && this.shakeIntensity > 0) {
       const offsetX = (Math.random() - 0.5) * 16 * this.shakeIntensity;
@@ -1065,7 +1463,6 @@ class JarEngine {
     this.drawJarBackground();
     this.updatePhysics();
 
-    // Render Stars
     this.stars.forEach(star => {
       this.ctx.save();
       this.ctx.translate(star.x, star.y);
@@ -1075,13 +1472,11 @@ class JarEngine {
       const size = star.radius * 2;
 
       if (img && img.complete) {
-        // Draw subtle soft shadow underneath star
         this.ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
         this.ctx.shadowBlur = 6;
         this.ctx.shadowOffsetY = 3;
         this.ctx.drawImage(img, -star.radius, -star.radius, size, size);
       } else {
-        // Fallback colored diamond/star
         this.ctx.fillStyle = '#ff9ebb';
         this.ctx.beginPath();
         this.ctx.arc(0, 0, star.radius, 0, Math.PI * 2);
@@ -1100,22 +1495,54 @@ class JarEngine {
 
 
 /**
- * main.js
- * Application controller for StarJar: binds user interactions,
- * coordinates Canvas physics, handles iPhone shake sensor, and manages mobile bottom tabs.
+ * Application Controller
  */
-
-
-
-
 document.addEventListener('DOMContentLoaded', () => {
-  // DOM Elements Declaration
   const userAccountLabel = document.getElementById('userAccountLabel');
   const loggedInView = document.getElementById('loggedInView');
   const loggedOutView = document.getElementById('loggedOutView');
   const syncStatusText = document.getElementById('syncStatusText');
   const manualSyncBtn = document.getElementById('manualSyncBtn');
   
+  // Jar Switcher & Stage Elements
+  const jarSwitcherBtn = document.getElementById('jarSwitcherBtn');
+  const currentJarTitle = document.getElementById('currentJarTitle');
+  const currentJarStarCount = document.getElementById('currentJarStarCount');
+  const stageJarNamePill = document.getElementById('stageJarNamePill');
+  const panelActiveJarTag = document.getElementById('panelActiveJarTag');
+  const drawPanelActiveJarTag = document.getElementById('drawPanelActiveJarTag');
+  const mobileAddJarTag = document.getElementById('mobileAddJarTag');
+  const promptsJarSubtitle = document.getElementById('promptsJarSubtitle');
+  const historyJarSubtitle = document.getElementById('historyJarSubtitle');
+  const starCountDisplay = document.getElementById('starCountDisplay');
+
+  // Jars Management Drawer
+  const jarsDrawer = document.getElementById('jarsDrawer');
+  const jarsDrawerOverlay = document.getElementById('jarsDrawerOverlay');
+  const closeJarsDrawerBtn = document.getElementById('closeJarsDrawerBtn');
+  const openCreateJarBtn = document.getElementById('openCreateJarBtn');
+  const jarsListContainer = document.getElementById('jarsListContainer');
+
+  // Create / Edit Jar Modal
+  const jarModalOverlay = document.getElementById('jarModalOverlay');
+  const jarModalTitle = document.getElementById('jarModalTitle');
+  const jarModalSubtitle = document.getElementById('jarModalSubtitle');
+  const jarForm = document.getElementById('jarForm');
+  const jarEditId = document.getElementById('jarEditId');
+  const jarNameInput = document.getElementById('jarNameInput');
+  const jarDescInput = document.getElementById('jarDescInput');
+  const jarTemplateGroup = document.getElementById('jarTemplateGroup');
+  const templateChipBtns = document.querySelectorAll('#jarTemplatePicker .template-chip');
+  const saveJarSubmitBtn = document.getElementById('saveJarSubmitBtn');
+  const cancelJarModalBtn = document.getElementById('cancelJarModalBtn');
+
+  // Move Activity Modal
+  const moveModalOverlay = document.getElementById('moveModalOverlay');
+  const moveActivityId = document.getElementById('moveActivityId');
+  const moveModalPromptTitle = document.getElementById('moveModalPromptTitle');
+  const moveJarsListContainer = document.getElementById('moveJarsListContainer');
+  const cancelMoveBtn = document.getElementById('cancelMoveBtn');
+
   // Desktop Add Form
   const addForm = document.getElementById('addActivityForm');
   const timePresets = document.querySelectorAll('#timePresets .chip');
@@ -1139,6 +1566,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const popupTaskTitle = document.getElementById('popupTaskTitle');
   const popupCategoryBadge = document.getElementById('popupCategoryBadge');
   const popupTimeBadge = document.getElementById('popupTimeBadge');
+  const popupJarBadge = document.getElementById('popupJarBadge');
   const popupTaskLink = document.getElementById('popupTaskLink');
   const resolutionModal = document.getElementById('resolutionModalOverlay');
   
@@ -1150,14 +1578,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const accountDrawer = document.getElementById('accountDrawer');
   const accountOverlay = document.getElementById('accountDrawerOverlay');
 
+  // History Filter Tabs
+  const historyTabBtns = document.querySelectorAll('#historyFilterTabs .history-tab-btn');
+  const histCountCurrent = document.getElementById('histCountCurrent');
+  const histCountAll = document.getElementById('histCountAll');
+
   // Bottom Tabs (Mobile)
   const tabJarBtn = document.getElementById('tabJarBtn');
+  const tabJarsBtn = document.getElementById('tabJarsBtn');
   const tabAddStarBtn = document.getElementById('tabAddStarBtn');
   const tabPromptsBtn = document.getElementById('tabPromptsBtn');
   const tabHistoryBtn = document.getElementById('tabHistoryBtn');
-  const tabAccountBtn = document.getElementById('tabAccountBtn');
 
-  // Edit Modal
+  // Edit Prompt Modal
   const editModalOverlay = document.getElementById('editModalOverlay');
   const editActivityForm = document.getElementById('editActivityForm');
   const editTaskId = document.getElementById('editTaskId');
@@ -1183,26 +1616,10 @@ document.addEventListener('DOMContentLoaded', () => {
   let isDrawType = 'any';
   let selectedDrawTime = 30;
   let isSignUpMode = false;
-  let shakeCooldown = false;
+  let currentHistoryScope = 'current';
+  let selectedJarTemplate = 'blank';
+  let isEditingJar = false;
 
-  // Initialize Jar with saved activities
-  function refreshJarAndUI() {
-    const activities = storage.getActivities();
-    jarEngine.syncStarsWithActivities(activities);
-    updateStarCounter();
-    renderHistory();
-    renderPromptsList();
-    updateAccountUI();
-  }
-
-  jarEngine.onAssetsLoaded = () => {
-    refreshJarAndUI();
-  };
-  refreshJarAndUI();
-
-  // --------------------------------------------------------------------------
-  // UI Helpers & Toasts
-  // --------------------------------------------------------------------------
   function triggerHaptic(pattern = [30]) {
     if (navigator.vibrate) {
       try {
@@ -1224,17 +1641,255 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 3200);
   }
 
-  function updateStarCounter() {
-    const count = storage.getActivities().length;
-    const badge = document.getElementById('starCountDisplay');
-    if (badge) {
-      badge.textContent = `${count} ${count === 1 ? 'Star' : 'Stars'}`;
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  }
+
+  function updateActiveJarLabels() {
+    const jar = storage.getActiveJar();
+    if (!jar) return;
+
+    const count = (jar.activities || []).length;
+    const starCountText = `${count} ${count === 1 ? 'star' : 'stars'}`;
+
+    if (currentJarTitle) currentJarTitle.textContent = jar.name;
+    if (currentJarStarCount) currentJarStarCount.textContent = starCountText;
+    
+    if (stageJarNamePill) stageJarNamePill.textContent = jar.name;
+    if (panelActiveJarTag) panelActiveJarTag.textContent = `Fold into: ${jar.name}`;
+    if (drawPanelActiveJarTag) drawPanelActiveJarTag.textContent = `From: ${jar.name}`;
+    if (mobileAddJarTag) mobileAddJarTag.textContent = `Fold into: ${jar.name}`;
+    if (promptsJarSubtitle) promptsJarSubtitle.textContent = jar.name;
+    if (historyJarSubtitle) historyJarSubtitle.textContent = jar.name;
+    
+    if (starCountDisplay) {
+      starCountDisplay.textContent = `${count} ${count === 1 ? 'Star' : 'Stars'}`;
     }
   }
 
-  // --------------------------------------------------------------------------
+  function updateUIState() {
+    updateActiveJarLabels();
+    renderJarsList();
+    renderPromptsList();
+    renderHistory();
+    updateAccountUI();
+  }
+
+  function refreshJarAndUI(forceReset = false) {
+    updateActiveJarLabels();
+    const activities = storage.getActivities();
+    jarEngine.syncStarsWithActivities(activities, forceReset);
+    renderJarsList();
+    renderPromptsList();
+    renderHistory();
+    updateAccountUI();
+  }
+
+  jarEngine.onAssetsLoaded = () => {
+    refreshJarAndUI(true);
+  };
+  refreshJarAndUI(true);
+
+  // Jars Management Drawer & Switcher
+  function openJarsDrawer() {
+    renderJarsList();
+    jarsDrawer.classList.add('active');
+    jarsDrawerOverlay.classList.add('active');
+  }
+
+  function closeJarsDrawer() {
+    jarsDrawer.classList.remove('active');
+    jarsDrawerOverlay.classList.remove('active');
+  }
+
+  if (jarSwitcherBtn) jarSwitcherBtn.addEventListener('click', openJarsDrawer);
+  if (closeJarsDrawerBtn) closeJarsDrawerBtn.addEventListener('click', closeJarsDrawer);
+  if (jarsDrawerOverlay) jarsDrawerOverlay.addEventListener('click', closeJarsDrawer);
+
+  function renderJarsList() {
+    if (!jarsListContainer) return;
+    const jars = storage.getJars();
+    const activeId = storage.getActiveJarId();
+
+    jarsListContainer.innerHTML = jars.map(jar => {
+      const isActive = jar.id === activeId;
+      const starCount = (jar.activities || []).length;
+      const histCount = (jar.history || []).length;
+      const canDelete = jars.length > 1;
+
+      return `
+        <div class="jar-card ${isActive ? 'active-jar' : ''}" data-jar-id="${jar.id}">
+          <div class="jar-card-top">
+            <div class="jar-card-info">
+              <div class="jar-card-title">
+                <span>${escapeHtml(jar.name)}</span>
+              </div>
+              ${jar.description ? `<div class="jar-card-desc">${escapeHtml(jar.description)}</div>` : ''}
+              <div class="jar-card-badges">
+                ${isActive ? `<span class="jar-card-badge active-badge">Active Jar</span>` : ''}
+                <span class="jar-card-badge stars-badge">${starCount} ${starCount === 1 ? 'star' : 'stars'}</span>
+                <span class="jar-card-badge hist-badge">${histCount} completed</span>
+              </div>
+            </div>
+            <div class="jar-card-actions" onclick="event.stopPropagation();">
+              <button class="jar-action-icon-btn btn-edit-jar" data-jar-id="${jar.id}" title="Rename & Edit Jar">
+                ✎
+              </button>
+              ${canDelete ? `
+                <button class="jar-action-icon-btn delete btn-delete-jar" data-jar-id="${jar.id}" title="Delete Jar">
+                  🗑
+                </button>
+              ` : ''}
+            </div>
+          </div>
+          ${!isActive ? `
+            <button class="btn-secondary btn-switch-jar" data-jar-id="${jar.id}" style="width: 100%; margin-top: 0.5rem; padding: 0.45rem; font-size: 0.8rem;">
+              Switch to this Jar
+            </button>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+
+    jarsListContainer.querySelectorAll('.jar-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.jar-card-actions')) return;
+        const id = card.dataset.jarId;
+        if (id && id !== activeId) {
+          switchJar(id);
+        }
+      });
+    });
+
+    jarsListContainer.querySelectorAll('.btn-switch-jar').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        switchJar(btn.dataset.jarId);
+      });
+    });
+
+    jarsListContainer.querySelectorAll('.btn-edit-jar').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const jar = storage.getJars().find(j => j.id === btn.dataset.jarId);
+        if (jar) openEditJarModal(jar);
+      });
+    });
+
+    jarsListContainer.querySelectorAll('.btn-delete-jar').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const jar = storage.getJars().find(j => j.id === btn.dataset.jarId);
+        if (jar && confirm(`Are you sure you want to delete "${jar.name}" and all of its folded stars and history?`)) {
+          storage.deleteJar(jar.id);
+          refreshJarAndUI(true);
+          triggerHaptic([50, 40]);
+          showToast(`Deleted "${jar.name}".`);
+        }
+      });
+    });
+  }
+
+  function switchJar(jarId) {
+    suppressMotion(2500);
+    if (storage.setActiveJar(jarId)) {
+      triggerHaptic([40, 50, 40]);
+      const activeJar = storage.getActiveJar();
+      refreshJarAndUI(true);
+      closeJarsDrawer();
+      showToast(`Switched to "${activeJar.name}".`);
+    }
+  }
+
+  // Create / Edit Jar Modal Handling
+  function openCreateJarModal() {
+    isEditingJar = false;
+    jarModalTitle.textContent = 'Create a New Star Jar';
+    jarModalSubtitle.textContent = 'Give your jar a unique name and purpose for your activities.';
+    saveJarSubmitBtn.textContent = 'Create Jar';
+    jarEditId.value = '';
+    jarNameInput.value = '';
+    jarDescInput.value = '';
+    jarTemplateGroup.style.display = 'block';
+
+    selectedJarTemplate = 'blank';
+    templateChipBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.template === 'blank'));
+
+    jarModalOverlay.classList.add('active');
+    setTimeout(() => jarNameInput.focus(), 250);
+  }
+
+  function openEditJarModal(jar) {
+    isEditingJar = true;
+    jarModalTitle.textContent = 'Edit Star Jar';
+    jarModalSubtitle.textContent = 'Update your jar name or purpose description.';
+    saveJarSubmitBtn.textContent = 'Save Changes';
+    jarEditId.value = jar.id;
+    jarNameInput.value = jar.name;
+    jarDescInput.value = jar.description || '';
+    jarTemplateGroup.style.display = 'none';
+
+    jarModalOverlay.classList.add('active');
+    setTimeout(() => jarNameInput.focus(), 250);
+  }
+
+  function closeJarModal() {
+    jarModalOverlay.classList.remove('active');
+  }
+
+  if (openCreateJarBtn) openCreateJarBtn.addEventListener('click', openCreateJarModal);
+  if (cancelJarModalBtn) cancelJarModalBtn.addEventListener('click', closeJarModal);
+  jarModalOverlay.addEventListener('click', (e) => {
+    if (e.target === jarModalOverlay) closeJarModal();
+  });
+
+  templateChipBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      templateChipBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedJarTemplate = btn.dataset.template;
+
+      const templateData = JAR_TEMPLATES[selectedJarTemplate];
+      if (templateData && templateData.name && !isEditingJar) {
+        if (!jarNameInput.value || Object.values(JAR_TEMPLATES).some(t => t.name === jarNameInput.value)) {
+          jarNameInput.value = templateData.name;
+        }
+        if (!jarDescInput.value || Object.values(JAR_TEMPLATES).some(t => t.description === jarDescInput.value)) {
+          jarDescInput.value = templateData.description;
+        }
+      }
+    });
+  });
+
+  jarForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = jarNameInput.value.trim();
+    const description = jarDescInput.value.trim();
+
+    if (!name) return;
+
+    if (isEditingJar) {
+      const id = jarEditId.value;
+      storage.updateJar(id, { name, description });
+      refreshJarAndUI(false);
+      closeJarModal();
+      showToast(`Updated "${name}".`);
+    } else {
+      const newJar = storage.createJar({
+        name,
+        description,
+        template: selectedJarTemplate
+      });
+      refreshJarAndUI(true);
+      closeJarModal();
+      closeJarsDrawer();
+      triggerHaptic([40, 60, 40]);
+      showToast(`Created "${newJar.name}" with ${newJar.activities.length} stars.`);
+    }
+  });
+
   // Mobile Bottom Navigation Tabs
-  // --------------------------------------------------------------------------
   function setActiveTab(button) {
     document.querySelectorAll('.bottom-tab-btn').forEach(btn => btn.classList.remove('active'));
     if (button) button.classList.add('active');
@@ -1245,9 +1900,17 @@ document.addEventListener('DOMContentLoaded', () => {
       setActiveTab(tabJarBtn);
       closeHistory();
       closePromptsDrawer();
+      closeJarsDrawer();
       closeAccountDrawer();
       closeMobileAddModal();
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  }
+
+  if (tabJarsBtn) {
+    tabJarsBtn.addEventListener('click', () => {
+      setActiveTab(tabJarsBtn);
+      openJarsDrawer();
     });
   }
 
@@ -1282,18 +1945,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  if (tabAccountBtn) {
-    tabAccountBtn.addEventListener('click', () => {
-      setActiveTab(tabAccountBtn);
-      openAccountDrawer();
-    });
-  }
-
-  // --------------------------------------------------------------------------
-  // Mobile Add Star Modal (Bottom Sheet)
-  // --------------------------------------------------------------------------
+  // Mobile Add Star Modal
   function openMobileAddModal() {
     if (mobileAddModal) {
+      updateActiveJarLabels();
       mobileAddModal.classList.add('active');
       const input = document.getElementById('mobileTaskTitle');
       if (input) setTimeout(() => input.focus(), 250);
@@ -1347,11 +2002,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
       storage.addActivity(newActivity);
       jarEngine.spawnStar(newActivity, true);
-      updateStarCounter();
-      renderPromptsList();
+      updateUIState();
 
       triggerHaptic([40, 30, 40]);
-      showToast(`✨ Folded "${title}" into the jar!`);
+      const activeJar = storage.getActiveJar();
+      showToast(`Folded "${title}" into ${activeJar.name}.`);
       mobileAddForm.reset();
       mobileTaskTimeInput.value = 15;
       mobileTimePresets.forEach(c => c.classList.toggle('active', c.dataset.time === '15'));
@@ -1359,9 +2014,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --------------------------------------------------------------------------
   // Desktop Add Activity Form
-  // --------------------------------------------------------------------------
   timePresets.forEach(chip => {
     chip.addEventListener('click', () => {
       timePresets.forEach(c => c.classList.remove('active'));
@@ -1398,19 +2051,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     storage.addActivity(newActivity);
     jarEngine.spawnStar(newActivity, true);
-    updateStarCounter();
-    renderPromptsList();
+    updateUIState();
 
     triggerHaptic([40, 30, 40]);
-    showToast(`✨ Folded "${title}" into the jar!`);
+    const activeJar = storage.getActiveJar();
+    showToast(`Folded "${title}" into ${activeJar.name}.`);
     addForm.reset();
     taskTimeInput.value = 15;
     timePresets.forEach(c => c.classList.toggle('active', c.dataset.time === '15'));
   });
 
-  // --------------------------------------------------------------------------
   // Draw Activity Controls
-  // --------------------------------------------------------------------------
   drawTimeChips.forEach(chip => {
     chip.addEventListener('click', () => {
       drawTimeChips.forEach(c => c.classList.remove('active'));
@@ -1429,8 +2080,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function performDraw() {
     const activities = storage.getActivities();
+    const activeJar = storage.getActiveJar();
+
     if (activities.length === 0) {
-      showToast('Your jar is currently empty! Add some stars first.');
+      showToast(`"${activeJar.name}" is currently empty. Fold a new star above.`);
       return;
     }
 
@@ -1443,14 +2096,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     if (filtered.length === 0) {
-      showToast('No stars match your exact time/mood! Shaking for any activity...');
+      showToast('No stars match your exact time/mood. Shaking for any activity...');
     }
 
     const pool = filtered.length > 0 ? filtered : activities;
     const selected = pool[Math.floor(Math.random() * pool.length)];
-
-    // Block motion sensor drawing
-    shakeCooldown = true;
 
     triggerHaptic([50, 40, 50, 40, 60]);
     jarEngine.shake(900);
@@ -1458,69 +2108,64 @@ document.addEventListener('DOMContentLoaded', () => {
     openTaskModal(selected);
   }
 
-  // --------------------------------------------------------------------------
-  // Mobile Shake Sensor (Noise-Gated Directional Reversal Engine)
-  // --------------------------------------------------------------------------
+  // Mobile Shake Sensor & Motion Suppression System
   let lastX = null, lastY = null, lastZ = null;
   let lastDeltaX = 0, lastDeltaY = 0, lastDeltaZ = 0;
   let accumulatedMotion = 0;
   let lastDrawTime = 0;
   let motionPermissionGranted = false;
-  let lastFormInteractionTime = 0;
+  let motionSuppressedUntil = 0;
   let reversalCount = 0;
   let lastReversalTime = 0;
 
-  // Calibrated thresholds for physical phone shake without false triggers from typing:
-  const MIN_DELTA_NOISE_GATE = 4.2;   // Discard sub-4.2 m/s² micro-deltas (typing/tapping noise)
-  const MOTION_TRIGGER_ENERGY = 16.0; // Requires firm deliberate shaking energy
-  const MOTION_DECAY = 0.78;          // Fast energy decay
-  const DRAW_COOLDOWN_MS = 2500;      // 2.5s cooldown after a draw
+  // Calibrated for effortless natural wrist shake without false button triggers
+  const MIN_DELTA_NOISE_GATE = 2.6;       // Responsive to standard wrist shaking
+  const MOTION_TRIGGER_ENERGY = 9.5;       // Comfortable threshold: natural 1-2s shake
+  const MOTION_DECAY = 0.86;               // Fluid accumulation across cycles
+  const REVERSAL_THRESHOLD = 1.6;          // Wrist oscillation threshold
+  const DRAW_COOLDOWN_MS = 2500;
 
   const mobileSensorPill = document.getElementById('mobileSensorPill');
   const motionPermissionBtn = document.getElementById('requestMotionPermissionBtn');
 
-  // Typing & Form interaction tracking to suppress shake false triggers
-  function updateFormInteractionLock() {
-    lastFormInteractionTime = Date.now();
+  function suppressMotion(ms = 2200) {
     accumulatedMotion = 0;
     reversalCount = 0;
     lastX = null;
     lastY = null;
     lastZ = null;
+    motionSuppressedUntil = Math.max(motionSuppressedUntil, Date.now() + ms);
   }
 
-  document.addEventListener('focusin', updateFormInteractionLock, { passive: true });
-  document.addEventListener('focusout', updateFormInteractionLock, { passive: true });
-  document.addEventListener('input', updateFormInteractionLock, { passive: true });
-  document.addEventListener('keydown', updateFormInteractionLock, { passive: true });
-  document.addEventListener('keyup', updateFormInteractionLock, { passive: true });
+  function handleUIInteraction(e) {
+    const target = e.target;
+    if (!target) return;
+    // Suppress motion when tapping any button, tab, card, input, drawer, or modal
+    if (target.closest('button, a, input, textarea, select, form, .chip, .type-toggle-btn, .jar-card, .drawer, .modal-overlay, .bottom-nav-bar, .app-header, .panel, .icon-choice, .template-chip, .prompt-item, .history-item, .history-tab-btn')) {
+      // Only the explicit Shake buttons bypass the suppression
+      if (!target.closest('#shakeJarBtn, #mobileShakeBtn')) {
+        suppressMotion(2200);
+      }
+    }
+  }
 
-  document.querySelectorAll('input, textarea, select, form, .chip, .type-toggle-btn').forEach(el => {
-    el.addEventListener('touchstart', updateFormInteractionLock, { passive: true });
-    el.addEventListener('pointerdown', updateFormInteractionLock, { passive: true });
-  });
+  document.addEventListener('pointerdown', handleUIInteraction, { passive: true });
+  document.addEventListener('touchstart', handleUIInteraction, { passive: true });
+  document.addEventListener('click', handleUIInteraction, { passive: true });
+  document.addEventListener('focusin', () => suppressMotion(2500), { passive: true });
+  document.addEventListener('focusout', () => suppressMotion(2500), { passive: true });
+  document.addEventListener('input', () => suppressMotion(2500), { passive: true });
+  document.addEventListener('keydown', () => suppressMotion(2500), { passive: true });
 
   function isMotionSuppressed() {
-    // 1. Cooldown or jar currently animating
+    if (Date.now() < motionSuppressedUntil) return true;
     if (jarEngine.isShaking || (Date.now() - lastDrawTime < DRAW_COOLDOWN_MS)) return true;
-
-    // 2. Active input/textarea focus
     const activeEl = document.activeElement;
     if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT' || activeEl.isContentEditable)) {
       return true;
     }
-
-    // 3. User typed or interacted with form controls within last 2.5 seconds
-    if (Date.now() - lastFormInteractionTime < 2500) {
-      return true;
-    }
-
-    // 4. Any modal or side drawer is currently visible
     const openModalOrDrawer = document.querySelector('.modal-overlay.active, .drawer.active');
-    if (openModalOrDrawer) {
-      return true;
-    }
-
+    if (openModalOrDrawer) return true;
     return false;
   }
 
@@ -1556,7 +2201,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const frameMag = Math.hypot(deltaX, deltaY * 1.15, deltaZ);
 
-    // NOISE GATE: Discard frame if delta is below threshold
     if (frameMag < MIN_DELTA_NOISE_GATE) {
       accumulatedMotion *= MOTION_DECAY;
       if (accumulatedMotion < 0.2) accumulatedMotion = 0;
@@ -1564,14 +2208,13 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Check for directional reversals (sign changes in acceleration delta)
     const now = Date.now();
-    const isReversalX = (deltaX > 2.5 && lastDeltaX < -2.5) || (deltaX < -2.5 && lastDeltaX > 2.5);
-    const isReversalY = (deltaY > 2.5 && lastDeltaY < -2.5) || (deltaY < -2.5 && lastDeltaY > 2.5);
-    const isReversalZ = (deltaZ > 2.5 && lastDeltaZ < -2.5) || (deltaZ < -2.5 && lastDeltaZ > 2.5);
+    const isReversalX = (deltaX > REVERSAL_THRESHOLD && lastDeltaX < -REVERSAL_THRESHOLD) || (deltaX < -REVERSAL_THRESHOLD && lastDeltaX > REVERSAL_THRESHOLD);
+    const isReversalY = (deltaY > REVERSAL_THRESHOLD && lastDeltaY < -REVERSAL_THRESHOLD) || (deltaY < -REVERSAL_THRESHOLD && lastDeltaY > REVERSAL_THRESHOLD);
+    const isReversalZ = (deltaZ > REVERSAL_THRESHOLD && lastDeltaZ < -REVERSAL_THRESHOLD) || (deltaZ < -REVERSAL_THRESHOLD && lastDeltaZ > REVERSAL_THRESHOLD);
 
     if (isReversalX || isReversalY || isReversalZ) {
-      if (now - lastReversalTime < 650) {
+      if (now - lastReversalTime < 700) {
         reversalCount++;
       } else {
         reversalCount = 1;
@@ -1583,10 +2226,8 @@ document.addEventListener('DOMContentLoaded', () => {
     lastDeltaY = deltaY;
     lastDeltaZ = deltaZ;
 
-    // Accumulate motion energy with fast decay
     accumulatedMotion = (accumulatedMotion * MOTION_DECAY) + frameMag;
 
-    // Trigger draw ONLY if energy threshold is reached AND at least 2 directional reversals detected
     if (accumulatedMotion >= MOTION_TRIGGER_ENERGY && reversalCount >= 2) {
       accumulatedMotion = 0;
       reversalCount = 0;
@@ -1608,7 +2249,6 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
   }
 
-  // Detect if browser requires explicit permission (iOS 13+ Safari)
   const isIOSPermissionRequired = (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function');
 
   if (isIOSPermissionRequired) {
@@ -1634,7 +2274,7 @@ document.addEventListener('DOMContentLoaded', () => {
               motionPermissionBtn.innerHTML = '<span>✓ Motion Sensor Active — Shake Phone!</span>';
               motionPermissionBtn.style.background = 'linear-gradient(135deg, #06d6a0, #118ab2)';
               motionPermissionBtn.style.color = '#fff';
-              showToast('✨ Motion sensor activated! Shake your phone to draw.');
+              showToast('Motion sensor activated! Shake your phone to draw.');
               setTimeout(() => {
                 if (mobileSensorPill) {
                   mobileSensorPill.style.transition = 'opacity 0.4s ease';
@@ -1665,7 +2305,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (mobileSensorPill) mobileSensorPill.style.display = 'none';
   }
 
-  // Shake/draw buttons: draw a star
   function drawWithPermissionCheck(e) {
     if (e) {
       e.preventDefault();
@@ -1682,14 +2321,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const shakeBtn = document.getElementById('shakeJarBtn');
   if (shakeBtn) shakeBtn.addEventListener('click', drawWithPermissionCheck);
 
-  const mobileShakeBtn = document.getElementById('mobileShakeBtn');
-  if (mobileShakeBtn) mobileShakeBtn.addEventListener('click', drawWithPermissionCheck);
-
-  // --------------------------------------------------------------------------
   // Task Details Modal
-  // --------------------------------------------------------------------------
   function openTaskModal(activity) {
     currentDrawnActivity = activity;
+    const activeJar = storage.getActiveJar();
 
     popupStarImage.src = `assets/stars/${activity.color || 'star_pink.png'}`;
     popupTaskTitle.textContent = activity.title;
@@ -1697,6 +2332,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     popupCategoryBadge.className = `badge badge-${activity.type}`;
     popupCategoryBadge.textContent = activity.type === 'both' ? 'Creative & Productive' : activity.type;
+
+    if (popupJarBadge && activeJar) {
+      popupJarBadge.textContent = activeJar.name;
+    }
 
     if (activity.link && activity.link.startsWith('http')) {
       popupTaskLink.href = activity.link;
@@ -1742,7 +2381,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Tapping backdrop overlay also dismisses the prompt modal
   taskModal.addEventListener('click', (e) => {
     if (e.target === taskModal) {
       closeTaskModal();
@@ -1758,9 +2396,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 250);
   });
 
-  // --------------------------------------------------------------------------
   // Task Completion & Resolution
-  // --------------------------------------------------------------------------
   document.getElementById('markCompleteBtn').addEventListener('click', () => {
     closeTaskModal();
     resolutionModal.classList.add('active');
@@ -1768,28 +2404,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('keepStarInJarBtn').addEventListener('click', () => {
     if (currentDrawnActivity) {
-      storage.logCompletion(currentDrawnActivity, true);
+      const activeJar = storage.getActiveJar();
+      storage.logCompletion(currentDrawnActivity, true, activeJar.id);
       triggerHaptic([40, 50, 40]);
-      showToast(`🎉 Logged "${currentDrawnActivity.title}"! Kept in jar.`);
-      renderHistory();
+      showToast(`Logged "${currentDrawnActivity.title}" in ${activeJar.name}.`);
+      refreshJarAndUI();
     }
     resolutionModal.classList.remove('active');
   });
 
   document.getElementById('removeStarFromJarBtn').addEventListener('click', () => {
     if (currentDrawnActivity) {
-      storage.logCompletion(currentDrawnActivity, false);
-      storage.removeActivity(currentDrawnActivity.id);
+      const activeJar = storage.getActiveJar();
+      storage.logCompletion(currentDrawnActivity, false, activeJar.id);
+      storage.removeActivity(currentDrawnActivity.id, activeJar.id);
       refreshJarAndUI();
       triggerHaptic([60, 40, 60]);
-      showToast(`🌟 Completed & removed star from jar!`);
+      showToast(`Completed and removed from ${activeJar.name}.`);
     }
     resolutionModal.classList.remove('active');
   });
 
-  // --------------------------------------------------------------------------
   // All Prompts Drawer & Management
-  // --------------------------------------------------------------------------
   function openPromptsDrawer() {
     renderPromptsList();
     promptsDrawer.classList.add('active');
@@ -1805,14 +2441,32 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('closePromptsDrawerBtn').addEventListener('click', closePromptsDrawer);
   promptsOverlay.addEventListener('click', closePromptsDrawer);
 
+  const drawerAddPromptBtn = document.getElementById('drawerAddPromptBtn');
+  if (drawerAddPromptBtn) {
+    drawerAddPromptBtn.addEventListener('click', () => {
+      closePromptsDrawer();
+      if (window.innerWidth <= 768) {
+        openMobileAddModal();
+      } else {
+        const titleInput = document.getElementById('taskTitle');
+        if (titleInput) {
+          titleInput.focus();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }
+    });
+  }
+
   function renderPromptsList() {
     const container = document.getElementById('promptsListContainer');
     const activities = storage.getActivities();
+    const activeJar = storage.getActiveJar();
+    const allJars = storage.getJars();
 
     if (activities.length === 0) {
       container.innerHTML = `
         <div style="text-align: center; color: var(--text-muted); padding: 2rem 0; font-size: 0.9rem;">
-          No stars in the jar yet! Fold a new star to get started.
+          No stars in "${activeJar ? escapeHtml(activeJar.name) : 'this jar'}" yet. Fold a new star to get started.
         </div>`;
       return;
     }
@@ -1846,9 +2500,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.id;
         const act = storage.getActivities().find(a => a.id === id);
-        if (act) {
-          openEditModal(act);
-        }
+        if (act) openEditModal(act);
       });
     });
 
@@ -1856,18 +2508,62 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.id;
         const act = storage.getActivities().find(a => a.id === id);
-        if (act && confirm(`Remove "${act.title}" from the jar?`)) {
+        if (act && confirm(`Remove "${act.title}" from this jar?`)) {
           storage.removeActivity(id);
           refreshJarAndUI();
-          showToast(`🗑 Removed "${act.title}" from jar.`);
+          showToast(`Removed "${act.title}" from jar.`);
         }
       });
     });
   }
 
-  // --------------------------------------------------------------------------
+  // Move Activity Modal Handling
+  function openMoveModal(activity) {
+    moveActivityId.value = activity.id;
+    moveModalPromptTitle.textContent = `Move "${activity.title}" to another Star Jar:`;
+    
+    const jars = storage.getJars();
+    const currentJarId = storage.getActiveJarId();
+    const targetJars = jars.filter(j => j.id !== currentJarId);
+
+    moveJarsListContainer.innerHTML = targetJars.map(jar => `
+      <button type="button" class="move-jar-option" data-target-jar-id="${jar.id}">
+        <span style="display: flex; align-items: center; gap: 0.5rem;">
+          <strong style="font-size: 1rem;">${escapeHtml(jar.name)}</strong>
+        </span>
+        <span style="font-size: 0.78rem; color: var(--primary-accent);">
+          ${(jar.activities || []).length} stars ➔
+        </span>
+      </button>
+    `).join('');
+
+    moveJarsListContainer.querySelectorAll('.move-jar-option').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetId = btn.dataset.targetJarId;
+        const targetJar = jars.find(j => j.id === targetId);
+        if (targetId && targetJar) {
+          storage.moveActivity(activity.id, currentJarId, targetId);
+          refreshJarAndUI();
+          closeMoveModal();
+          triggerHaptic([30, 40]);
+          showToast(`Moved "${activity.title}" to "${targetJar.name}".`);
+        }
+      });
+    });
+
+    moveModalOverlay.classList.add('active');
+  }
+
+  function closeMoveModal() {
+    moveModalOverlay.classList.remove('active');
+  }
+
+  if (cancelMoveBtn) cancelMoveBtn.addEventListener('click', closeMoveModal);
+  moveModalOverlay.addEventListener('click', (e) => {
+    if (e.target === moveModalOverlay) closeMoveModal();
+  });
+
   // Edit Prompt Modal Handling
-  // --------------------------------------------------------------------------
   function openEditModal(activity) {
     editTaskId.value = activity.id;
     editTaskTitle.value = activity.title;
@@ -1914,12 +2610,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     refreshJarAndUI();
     closeEditModal();
-    showToast(`✓ Updated "${title}"!`);
+    showToast(`Updated "${title}".`);
   });
 
-  // --------------------------------------------------------------------------
   // History Drawer
-  // --------------------------------------------------------------------------
   function openHistory() {
     renderHistory();
     historyDrawer.classList.add('active');
@@ -1935,19 +2629,44 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('closeHistoryDrawerBtn').addEventListener('click', closeHistory);
   historyOverlay.addEventListener('click', closeHistory);
 
+  historyTabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      historyTabBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentHistoryScope = btn.dataset.historyScope || 'current';
+      renderHistory();
+    });
+  });
+
   function renderHistory() {
     const container = document.getElementById('historyListContainer');
-    const history = storage.getHistory();
+    const clearBtn = document.getElementById('clearHistoryBtn');
+    const activeJar = storage.getActiveJar();
+    const currentHist = storage.getHistory();
+    const allHist = storage.getHistory('all');
 
-    if (history.length === 0) {
+    if (histCountCurrent) histCountCurrent.textContent = currentHist.length;
+    if (histCountAll) histCountAll.textContent = allHist.length;
+
+    const displayList = currentHistoryScope === 'all' ? allHist : currentHist;
+
+    if (clearBtn) {
+      clearBtn.textContent = currentHistoryScope === 'all'
+        ? 'Clear History across All Jars'
+        : `Clear History for ${activeJar ? activeJar.name : 'this Jar'}`;
+    }
+
+    if (displayList.length === 0) {
       container.innerHTML = `
         <div style="text-align: center; color: var(--text-muted); padding: 2rem 0; font-size: 0.9rem;">
-          No completed activities yet. Shake the jar to draw your first inspiration!
+          ${currentHistoryScope === 'all' 
+            ? 'No completed activities recorded across any jars yet.' 
+            : `No completed activities in "${activeJar ? escapeHtml(activeJar.name) : 'this jar'}" yet.`}
         </div>`;
       return;
     }
 
-    container.innerHTML = history.map(item => {
+    container.innerHTML = displayList.map(item => {
       const date = new Date(item.completedAt);
       const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       return `
@@ -1955,6 +2674,9 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="history-item-title">${escapeHtml(item.title)}</div>
           <div class="history-item-meta">
             <span class="badge badge-${item.type}" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;">${item.type}</span>
+            ${currentHistoryScope === 'all' ? `
+              <span class="badge badge-jar" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;">${escapeHtml(item.jarName || 'Jar')}</span>
+            ` : ''}
             <span>${item.timeSpent}m • ${dateStr}</span>
           </div>
         </div>
@@ -1963,16 +2685,19 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   document.getElementById('clearHistoryBtn').addEventListener('click', () => {
-    if (confirm('Are you sure you want to clear your activity history?')) {
-      storage.clearHistory();
+    const activeJar = storage.getActiveJar();
+    const promptMsg = currentHistoryScope === 'all'
+      ? 'Are you sure you want to clear activity history across ALL star jars?'
+      : `Are you sure you want to clear history for "${activeJar ? activeJar.name : 'this jar'}"?`;
+
+    if (confirm(promptMsg)) {
+      storage.clearHistory(currentHistoryScope === 'all' ? 'all' : null);
       renderHistory();
       showToast('Activity history cleared.');
     }
   });
 
-  // --------------------------------------------------------------------------
   // Account & Cloud Sync Drawer
-  // --------------------------------------------------------------------------
   function openAccountDrawer() {
     updateAccountUI();
     accountDrawer.classList.add('active');
@@ -2031,10 +2756,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       if (isSignUpMode) {
         await storage.registerUser(email, password, name);
-        showToast(`✨ Welcome, ${name || email}! Account created & saved to cloud.`);
+        showToast(`Welcome, ${name || email}! Jars & account saved.`);
       } else {
         await storage.loginUser(email, password);
-        showToast(`🌟 Welcome back! Progress synced across your devices.`);
+        showToast(`Welcome back! Jars synced successfully.`);
       }
       refreshJarAndUI();
       authForm.reset();
@@ -2042,7 +2767,6 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) {
       const msg = err.message || 'Authentication error.';
       showToast(msg);
-      // If user attempted login but no account exists, auto-switch form to Sign Up
       if (!isSignUpMode && msg.toLowerCase().includes('no account found')) {
         isSignUpMode = true;
         authSubmitBtn.textContent = 'Sign Up';
@@ -2067,7 +2791,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (res.success) {
           refreshJarAndUI();
           updateAccountUI();
-          showToast(`✓ Cloud sync complete (${res.activitiesCount} stars)!`);
+          showToast(`Sync complete (${res.jarsCount || storage.getJars().length} jars).`);
         } else {
           showToast('Sync failed: ' + (res.error || 'Server error'));
         }
@@ -2080,13 +2804,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Cross-device auto-sync hooks
   storage.addSyncListener(() => {
     refreshJarAndUI();
     updateAccountUI();
   });
 
-  // 1. On startup
   storage.syncFromCloud().then((res) => {
     if (res && res.success) {
       refreshJarAndUI();
@@ -2094,7 +2816,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }).catch(() => {});
 
-  // 2. When user switches back to this browser tab / device
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       storage.syncFromCloud().then((res) => {
@@ -2115,7 +2836,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }).catch(() => {});
   });
 
-  // 3. Periodic background sync every 60s
   setInterval(() => {
     if (storage.getCurrentUser()) {
       storage.syncFromCloud().then((res) => {
@@ -2132,10 +2852,4 @@ document.addEventListener('DOMContentLoaded', () => {
     updateAccountUI();
     showToast('Logged out.');
   });
-
-  function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-  }
 });
-

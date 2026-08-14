@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>The Star Jar — Origami Activity & Creativity Jar</title>
-  <meta name="description" content="Fill your digital glass jar with colorful origami glitter stars representing your creative and productive activities. Shake the jar to draw your next inspiration!">
+  <meta name="description" content="Fill your digital glass jars with colorful origami glitter stars representing your creative, productive, and mindful activities. Shake the jar to draw your next inspiration!">
   
   <!-- iOS Safari PWA / Native-feel Meta Tags -->
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -19,7 +19,7 @@
   <link rel="apple-touch-icon" href="assets/icon-180.png?v=4">
   <link rel="manifest" href="manifest.json?v=4">
   <link rel="icon" href="assets/icon-192.png?v=6" type="image/png">
-  <link rel="stylesheet" href="css/style.css?v=20260812_20">
+  <link rel="stylesheet" href="css/style.css?v=20260813_02">
 </head>
 <body>
   <!-- Ambient Space Starfield -->
@@ -27,10 +27,22 @@
 
   <!-- Header -->
   <header>
-    <div class="brand">
-      <img src="assets/stars/star_pink.png" alt="The Star Jar icon" width="34" height="34" style="filter: drop-shadow(0 0 8px #f7a8b8);">
-      <h1>The Star Jar</h1>
+    <div class="brand-group">
+      <div class="brand">
+        <img src="assets/stars/star_pink.png" alt="The Star Jar icon" width="34" height="34" style="filter: drop-shadow(0 0 8px #f7a8b8);">
+        <h1>The Star Jar</h1>
+      </div>
+
+      <!-- Active Jar Switcher Pill Button -->
+      <button id="jarSwitcherBtn" class="nav-btn jar-switcher-btn" aria-label="Switch or Manage Star Jars" title="Tap to switch or manage Star Jars">
+        <span class="jar-selector-title" id="currentJarTitle">Main Star Jar</span>
+        <span class="jar-pill-count" id="currentJarStarCount">6 stars</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </button>
     </div>
+
     <div class="header-actions">
       <button id="headerAddStarBtn" class="nav-btn header-add-btn" aria-label="Fold a New Star">
         <span>+ Star</span>
@@ -74,10 +86,16 @@
   <main id="mainLayout">
     <!-- Left Column: Add Activity Form (Desktop Card / Mobile Bottom Sheet Trigger) -->
     <section class="glass-card desktop-add-panel" id="addActivitySection" aria-labelledby="addActivityTitle">
-      <h2 id="addActivityTitle" class="card-title">
-        <img src="assets/stars/star_yellow.png" alt="" width="24" height="24">
-        Fold a New Star
-      </h2>
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1.25rem;">
+        <h2 id="addActivityTitle" class="card-title" style="margin-bottom: 0;">
+          <img src="assets/stars/star_yellow.png" alt="" width="24" height="24">
+          Fold a New Star
+        </h2>
+      </div>
+      <div class="active-jar-tag-container">
+        <span class="active-jar-tag" id="panelActiveJarTag">Fold into: Main Star Jar</span>
+      </div>
+
       <form id="addActivityForm">
         <div class="form-group">
           <label for="taskTitle">Activity or Creative Task</label>
@@ -123,12 +141,16 @@
 
     <!-- Center Column: Glass Jar Display & Mobile Hero -->
     <section class="jar-stage-container" aria-label="Interactive Star Jar">
-      <div class="jar-wrapper" id="jarClickArea" title="Tap or shake to rattle the stars!">
+      <div class="jar-stage-header">
+        <span class="jar-stage-name-pill" id="stageJarNamePill">Main Star Jar</span>
+      </div>
+
+      <div class="jar-wrapper" id="jarClickArea" title="Star Jar">
         <canvas id="jarCanvas"></canvas>
       </div>
       <div class="jar-hint">
-        <span class="star-count-badge" id="starCountDisplay">8 Stars</span>
-        <span>• Tap Jar or Shake iPhone</span>
+        <span class="star-count-badge" id="starCountDisplay">6 Stars</span>
+        <span id="jarHintText">• Shake Phone or Press "Shake the Jar"</span>
       </div>
 
       <!-- Mobile Quick Shake Action Area -->
@@ -141,10 +163,16 @@
 
     <!-- Right Column: Draw Activity Panel -->
     <section class="glass-card draw-panel" id="drawActivitySection" aria-labelledby="drawActivityTitle">
-      <h2 id="drawActivityTitle" class="card-title">
-        <img src="assets/stars/star_teal.png" alt="" width="24" height="24">
-        Draw a Star
-      </h2>
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1.25rem;">
+        <h2 id="drawActivityTitle" class="card-title" style="margin-bottom: 0;">
+          <img src="assets/stars/star_teal.png" alt="" width="24" height="24">
+          Draw a Star
+        </h2>
+      </div>
+      <div class="active-jar-tag-container">
+        <span class="active-jar-tag" id="drawPanelActiveJarTag">From: Main Star Jar</span>
+      </div>
+
       <div class="form-group">
         <label>Available Time</label>
         <div class="time-chips" id="drawTimeChips">
@@ -181,6 +209,16 @@
       <span>Jar</span>
     </button>
 
+    <button class="bottom-tab-btn" id="tabJarsBtn">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+        <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+        <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+        <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+      </svg>
+      <span>Jars</span>
+    </button>
+
     <button class="bottom-tab-btn bottom-add-star-btn" id="tabAddStarBtn">
       <div class="tab-add-circle">＋</div>
       <span>Star</span>
@@ -205,23 +243,19 @@
       </svg>
       <span>History</span>
     </button>
-
-    <button class="bottom-tab-btn" id="tabAccountBtn">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-        <circle cx="12" cy="7" r="4"></circle>
-      </svg>
-      <span>Account</span>
-    </button>
   </nav>
 
   <!-- Mobile Add Star Bottom Sheet Modal -->
   <div class="modal-overlay" id="mobileAddModalOverlay" role="dialog" aria-modal="true">
     <div class="popup-card bottom-sheet-card">
       <div class="bottom-sheet-drag-handle"></div>
-      <h3 class="popup-title" style="font-size: 1.8rem; margin-bottom: 1rem;">
+      <h3 class="popup-title" style="font-size: 1.8rem; margin-bottom: 0.25rem;">
         Fold a New Star ✨
       </h3>
+      <div style="text-align: center; margin-bottom: 1rem;">
+        <span class="active-jar-tag" id="mobileAddJarTag">Fold into: Main Star Jar</span>
+      </div>
+
       <form id="mobileAddActivityForm" style="text-align: left;">
         <div class="form-group">
           <label for="mobileTaskTitle">Activity or Creative Task</label>
@@ -277,6 +311,7 @@
       <div class="popup-meta">
         <span class="badge" id="popupCategoryBadge">Creative</span>
         <span class="badge badge-time" id="popupTimeBadge">15 mins</span>
+        <span class="badge badge-jar" id="popupJarBadge">Main Star Jar</span>
       </div>
 
       <a id="popupTaskLink" href="#" target="_blank" rel="noopener noreferrer" class="popup-link" style="display: none;">
@@ -310,7 +345,7 @@
     <div class="popup-card" style="max-width: 420px;">
       <h3 class="popup-title" style="font-size: 1.8rem;">Activity Logged! 🎉</h3>
       <p style="color: var(--text-muted); margin-bottom: 1.5rem; font-size: 0.95rem;">
-        Would you like to keep this activity folded inside the jar for future draws, or remove it?
+        Would you like to keep this activity folded inside this jar for future draws, or remove it?
       </p>
       <div class="popup-actions">
         <button id="keepStarInJarBtn" class="btn-primary">
@@ -358,18 +393,143 @@
     </div>
   </div>
 
+  <!-- Side Drawer: Star Jars Manager & Switcher -->
+  <div class="drawer-overlay" id="jarsDrawerOverlay"></div>
+  <aside class="drawer" id="jarsDrawer" aria-label="Star Jars Management">
+    <div class="drawer-header">
+      <h2>Your Star Jars</h2>
+      <button class="drawer-close-btn" id="closeJarsDrawerBtn">&times;</button>
+    </div>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.25rem;">
+      Create and switch between separate jars for different creative ideas, habits, and purposes.
+    </p>
+
+    <button id="openCreateJarBtn" class="btn-primary" style="margin-bottom: 1.5rem; font-size: 0.95rem; padding: 0.75rem;">
+      <span>＋ Create New Star Jar</span>
+    </button>
+
+    <div class="jars-list-container" id="jarsListContainer">
+      <!-- Populated dynamically with jar cards -->
+    </div>
+  </aside>
+
+  <!-- Create / Edit Jar Modal -->
+  <div class="modal-overlay" id="jarModalOverlay" role="dialog" aria-modal="true">
+    <div class="popup-card jar-form-card" style="max-width: 480px; text-align: left;">
+      <h3 class="popup-title" id="jarModalTitle" style="font-size: 1.8rem; text-align: center; margin-bottom: 0.25rem;">
+        Create a New Star Jar
+      </h3>
+      <p id="jarModalSubtitle" style="color: var(--text-muted); font-size: 0.85rem; text-align: center; margin-bottom: 1.25rem;">
+        Give your jar a unique name and purpose.
+      </p>
+
+      <form id="jarForm">
+        <input type="hidden" id="jarEditId">
+        
+        <div class="form-group">
+          <label for="jarNameInput">Jar Name</label>
+          <input type="text" id="jarNameInput" class="custom-input" placeholder="e.g. Self-Care & Mindfulness" required autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label for="jarDescInput">Purpose / Tagline (Optional)</label>
+          <input type="text" id="jarDescInput" class="custom-input" placeholder="e.g. Relaxing routines and mindful breaks" autocomplete="off">
+        </div>
+
+        <div class="form-group" id="jarTemplateGroup">
+          <label>Starter Prompts Template</label>
+          <div class="template-chips-grid" id="jarTemplatePicker">
+            <button type="button" class="template-chip active" data-template="blank">
+              <div class="t-meta">
+                <strong>Blank Jar</strong>
+                <small>Start with 0 stars</small>
+              </div>
+            </button>
+            <button type="button" class="template-chip" data-template="creative">
+              <div class="t-meta">
+                <strong>Creative & Art</strong>
+                <small>6 artistic prompts</small>
+              </div>
+            </button>
+            <button type="button" class="template-chip" data-template="selfcare">
+              <div class="t-meta">
+                <strong>Self-Care & Calm</strong>
+                <small>6 mindful prompts</small>
+              </div>
+            </button>
+            <button type="button" class="template-chip" data-template="productivity">
+              <div class="t-meta">
+                <strong>Focus & Admin</strong>
+                <small>6 productivity tasks</small>
+              </div>
+            </button>
+            <button type="button" class="template-chip" data-template="datenight">
+              <div class="t-meta">
+                <strong>Date Night</strong>
+                <small>6 bonding ideas</small>
+              </div>
+            </button>
+            <button type="button" class="template-chip" data-template="adventure">
+              <div class="t-meta">
+                <strong>Boredom Busters</strong>
+                <small>6 fun adventures</small>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 1.5rem;">
+          <button type="submit" id="saveJarSubmitBtn" class="btn-primary" style="font-size: 1.05rem; padding: 0.75rem;">
+            Save Jar
+          </button>
+          <button type="button" id="cancelJarModalBtn" class="btn-secondary" style="padding: 0.75rem;">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Move Activity to Another Jar Modal -->
+  <div class="modal-overlay" id="moveModalOverlay" role="dialog" aria-modal="true">
+    <div class="popup-card" style="max-width: 420px; text-align: left;">
+      <h3 class="popup-title" style="font-size: 1.6rem; text-align: center; margin-bottom: 0.5rem;">
+        Move Prompt to Jar
+      </h3>
+      <p id="moveModalPromptTitle" style="color: var(--text-muted); font-size: 0.9rem; text-align: center; margin-bottom: 1.25rem;">
+        Select the destination Star Jar:
+      </p>
+      <input type="hidden" id="moveActivityId">
+      
+      <div class="move-jars-list" id="moveJarsListContainer">
+        <!-- Populated dynamically -->
+      </div>
+
+      <div style="margin-top: 1.25rem;">
+        <button type="button" id="cancelMoveBtn" class="btn-secondary" style="padding: 0.65rem;">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Side Drawer: All Prompts & Stars Management -->
   <div class="drawer-overlay" id="promptsDrawerOverlay"></div>
   <aside class="drawer" id="promptsDrawer" aria-label="Jar Stars and Prompts">
     <div class="drawer-header">
-      <h2>All Prompts in Jar</h2>
+      <div>
+        <h2 style="font-size: 1.45rem;">Prompts in Jar</h2>
+        <div class="drawer-jar-subtitle" id="promptsJarSubtitle">Main Star Jar</div>
+      </div>
       <button class="drawer-close-btn" id="closePromptsDrawerBtn">&times;</button>
     </div>
-    <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.25rem;">
-      Manage all activities currently folded inside your jar.
-    </p>
+    
+    <div class="prompts-drawer-top-actions">
+      <button id="drawerAddPromptBtn" class="btn-primary" style="padding: 0.6rem 1rem; font-size: 0.88rem; width: 100%; margin-bottom: 1rem;">
+        <span>＋ Fold Star into this Jar</span>
+      </button>
+    </div>
+
     <div class="history-list" id="promptsListContainer">
-      <!-- Populated dynamically with edit & delete controls -->
+      <!-- Populated dynamically with edit, move, & delete controls -->
     </div>
   </aside>
 
@@ -377,14 +537,28 @@
   <div class="drawer-overlay" id="historyDrawerOverlay"></div>
   <aside class="drawer" id="historyDrawer" aria-label="Activity History">
     <div class="drawer-header">
-      <h2>Activity History</h2>
+      <div>
+        <h2 style="font-size: 1.45rem;">Activity History</h2>
+        <div class="drawer-jar-subtitle" id="historyJarSubtitle">Main Star Jar</div>
+      </div>
       <button class="drawer-close-btn" id="closeHistoryDrawerBtn">&times;</button>
     </div>
+
+    <!-- History Jar Filter Tabs -->
+    <div class="history-filter-tabs" id="historyFilterTabs">
+      <button type="button" class="history-tab-btn active" data-history-scope="current" id="histTabCurrent">
+        Active Jar (<span id="histCountCurrent">0</span>)
+      </button>
+      <button type="button" class="history-tab-btn" data-history-scope="all" id="histTabAll">
+        All Jars (<span id="histCountAll">0</span>)
+      </button>
+    </div>
+
     <div class="history-list" id="historyListContainer">
       <!-- Populated dynamically -->
     </div>
     <div style="margin-top: auto; padding-top: 1.5rem;">
-      <button id="clearHistoryBtn" class="btn-secondary" style="font-size: 0.85rem;">Clear History</button>
+      <button id="clearHistoryBtn" class="btn-secondary" style="font-size: 0.85rem;">Clear History for this Jar</button>
     </div>
   </aside>
 
@@ -398,7 +572,7 @@
     
     <div id="loggedOutView">
       <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.25rem;">
-        Create an account or log in to sync your stars and activity progress across all your devices.
+        Create an account or log in to sync all your custom jars, prompts, and activity progress across all your devices.
       </p>
       
       <form id="authForm">
@@ -450,6 +624,6 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- Bundled JS (no ES modules — Safari compatible) -->
-  <script src="js/app.js?v=20260812_20"></script>
+  <script src="js/app.js?v=20260813_02"></script>
 </body>
 </html>

@@ -124,6 +124,13 @@ header {
   padding: 1.25rem 2rem;
   max-width: 1280px;
   margin: 0 auto;
+  gap: 1rem;
+}
+
+.brand-group {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
 }
 
 .brand {
@@ -1141,4 +1148,411 @@ main {
   .popup-title {
     font-size: 1.7rem;
   }
+
+  .brand-group {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+    width: 100%;
+  }
+
+  .jar-switcher-btn {
+    width: 100%;
+    justify-content: space-between;
+    padding: 0.5rem 0.85rem;
+  }
+
+  .jar-selector-title {
+    max-width: 180px;
+  }
 }
+
+/* ==========================================================================
+   Multi-Jar System Styles
+   ========================================================================== */
+
+/* Active Jar Switcher Pill Button */
+.jar-switcher-btn {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(247, 168, 184, 0.1));
+  border: 1px solid rgba(247, 168, 184, 0.35);
+  color: #fff;
+  padding: 0.42rem 0.85rem;
+  border-radius: 9999px;
+  font-size: 0.88rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.jar-switcher-btn:hover {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.22), rgba(247, 168, 184, 0.25));
+  border-color: var(--primary-accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 18px rgba(247, 168, 184, 0.35);
+}
+
+.jar-badge-emoji {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.jar-selector-title {
+  font-weight: 600;
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #fff;
+}
+
+.jar-pill-count {
+  background: rgba(247, 168, 184, 0.25);
+  color: var(--primary-accent);
+  padding: 0.12rem 0.45rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+/* Active Jar Subtitle Tags */
+.active-jar-tag-container {
+  margin-bottom: 1.1rem;
+}
+
+.active-jar-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+  padding: 0.22rem 0.7rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Jar Stage Center Header Pill */
+.jar-stage-header {
+  text-align: center;
+  margin-bottom: 0.6rem;
+}
+
+.jar-stage-name-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(23, 18, 51, 0.75);
+  border: 1px solid rgba(247, 168, 184, 0.3);
+  color: #fff;
+  padding: 0.35rem 0.9rem;
+  border-radius: 9999px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+/* Jars Drawer & Cards */
+.jars-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-bottom: 1.5rem;
+}
+
+.jar-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 1rem;
+  transition: all 0.25s ease;
+  position: relative;
+  cursor: pointer;
+}
+
+.jar-card:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(247, 168, 184, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.jar-card.active-jar {
+  background: linear-gradient(135deg, rgba(247, 168, 184, 0.14), rgba(33, 25, 71, 0.4));
+  border-color: var(--primary-accent);
+  box-shadow: 0 0 20px rgba(247, 168, 184, 0.25);
+}
+
+.jar-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.45rem;
+}
+
+.jar-card-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.jar-card-info {
+  flex: 1;
+}
+
+.jar-card-title {
+  font-family: var(--font-body);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 0.2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.jar-card-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+  margin-bottom: 0.6rem;
+}
+
+.jar-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.jar-card-badge {
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+}
+
+.jar-card-badge.stars-badge {
+  background: rgba(247, 168, 184, 0.18);
+  color: var(--primary-accent);
+  font-weight: 600;
+}
+
+.jar-card-badge.hist-badge {
+  background: rgba(72, 202, 228, 0.18);
+  color: var(--productive-color);
+}
+
+.jar-card-badge.active-badge {
+  background: #06d6a0;
+  color: #0a0b1e;
+  font-weight: 700;
+}
+
+.jar-card-actions {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.jar-action-icon-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-main);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.jar-action-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+  transform: scale(1.08);
+}
+
+.jar-action-icon-btn.delete:hover {
+  background: rgba(255, 117, 151, 0.3);
+  border-color: #ff7597;
+  color: #ff7597;
+}
+
+/* Icon Picker Grid */
+.icon-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.45rem;
+  margin-top: 0.3rem;
+}
+
+.icon-choice {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  font-size: 1.35rem;
+  padding: 0.5rem 0.2rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-choice:hover {
+  background: rgba(255, 255, 255, 0.18);
+  transform: scale(1.1);
+}
+
+.icon-choice.active {
+  background: rgba(247, 168, 184, 0.25);
+  border-color: var(--primary-accent);
+  box-shadow: 0 0 12px rgba(247, 168, 184, 0.4);
+  transform: scale(1.12);
+}
+
+/* Starter Templates Grid */
+.template-chips-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+  margin-top: 0.3rem;
+}
+
+@media (max-width: 480px) {
+  .template-chips-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.template-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+  color: var(--text-main);
+  font-family: var(--font-body);
+}
+
+.template-chip:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.template-chip.active {
+  background: rgba(247, 168, 184, 0.18);
+  border-color: var(--primary-accent);
+  box-shadow: 0 0 12px rgba(247, 168, 184, 0.25);
+}
+
+.template-chip .t-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.template-chip .t-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+.template-chip .t-meta strong {
+  font-size: 0.82rem;
+  color: #fff;
+}
+
+.template-chip .t-meta small {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* History Segmented Tabs & Drawer Subtitles */
+.drawer-jar-subtitle {
+  font-size: 0.85rem;
+  color: var(--primary-accent);
+  font-weight: 500;
+  margin-top: 0.15rem;
+}
+
+.history-filter-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 0.3rem;
+  border-radius: 12px;
+  margin-bottom: 1.25rem;
+}
+
+.history-tab-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 0.45rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-body);
+}
+
+.history-tab-btn.active {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.badge-jar {
+  background: rgba(181, 131, 141, 0.25);
+  color: #ffd166;
+  border: 1px solid rgba(255, 209, 102, 0.3);
+}
+
+/* Move Activity List */
+.move-jars-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.move-jar-option {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #fff;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-body);
+}
+
+.move-jar-option:hover {
+  background: rgba(247, 168, 184, 0.15);
+  border-color: var(--primary-accent);
+  transform: translateX(4px);
+}
+

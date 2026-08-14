@@ -214,7 +214,7 @@ export class JarEngine {
     return positions;
   }
 
-  syncStarsWithActivities(activities) {
+  syncStarsWithActivities(activities, forceReset = false) {
     // Keep visual rendering capped at MAX_VISUAL_STARS (100 stars)
     const visualActivities = activities.length > MAX_VISUAL_STARS
       ? activities.slice(activities.length - MAX_VISUAL_STARS)
@@ -228,6 +228,8 @@ export class JarEngine {
     const stationaryPositions = this.calculateStationaryPositions(visualActivities.length);
 
     const newStarsList = [];
+    let hasActiveStar = false;
+
     visualActivities.forEach((act, index) => {
       const pos = stationaryPositions[index] || {
         x: this.width / 2,
@@ -239,7 +241,7 @@ export class JarEngine {
       if (existingMap.has(act.id)) {
         const s = existingMap.get(act.id);
         s.radius = targetRadius;
-        if (!this.isSimulating) {
+        if (forceReset) {
           s.x = pos.x;
           s.y = pos.y;
           s.angle = pos.angle;
@@ -247,31 +249,58 @@ export class JarEngine {
           s.vy = 0;
           s.vAngle = 0;
           s.isSleeping = true;
+        } else if (!s.isSleeping) {
+          hasActiveStar = true;
         }
         newStarsList.push(s);
       } else {
         const imageName = act.color || this.getRandomImageForType(act.type);
-        const star = {
-          id: 'star-p-' + Math.random().toString(36).substr(2, 9),
-          activityId: act.id,
-          activity: act,
-          imageName: imageName,
-          x: pos.x,
-          y: pos.y,
-          vx: 0,
-          vy: 0,
-          radius: targetRadius,
-          angle: pos.angle,
-          vAngle: 0,
-          isSleeping: true,
-          isGlow: false
-        };
-        newStarsList.push(star);
+        if (forceReset) {
+          const star = {
+            id: 'star-p-' + Math.random().toString(36).substr(2, 9),
+            activityId: act.id,
+            activity: act,
+            imageName: imageName,
+            x: pos.x,
+            y: pos.y,
+            vx: 0,
+            vy: 0,
+            radius: targetRadius,
+            angle: pos.angle,
+            vAngle: 0,
+            isSleeping: true,
+            isGlow: false
+          };
+          newStarsList.push(star);
+        } else {
+          // Drop new star with physics from top neck
+          const startX = this.width / 2 + (Math.random() - 0.5) * 20;
+          const startY = this.jarBounds.neckTop - 15;
+          const star = {
+            id: 'star-p-' + Math.random().toString(36).substr(2, 9),
+            activityId: act.id,
+            activity: act,
+            imageName: imageName,
+            x: startX,
+            y: startY,
+            vx: (Math.random() - 0.5) * 1.5,
+            vy: 4.5 + Math.random() * 1.5,
+            radius: targetRadius,
+            angle: Math.random() * Math.PI * 2,
+            vAngle: (Math.random() - 0.5) * 0.1,
+            isSleeping: false,
+            isGlow: true
+          };
+          newStarsList.push(star);
+          hasActiveStar = true;
+        }
       }
     });
 
     this.stars = newStarsList;
-    if (!this.isShaking) {
+    if (hasActiveStar) {
+      this.isSimulating = true;
+    } else if (forceReset && !this.isShaking) {
       this.isSimulating = false;
     }
   }

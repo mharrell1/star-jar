@@ -1,10 +1,11 @@
 /**
  * main.js
  * Application controller for StarJar: binds user interactions,
- * coordinates Canvas physics, handles iPhone shake sensor, and manages mobile bottom tabs.
+ * coordinates Canvas physics, handles multi-jar management and switching,
+ * manages prompt & history isolation, handles iPhone shake sensor, and mobile bottom tabs.
  */
 
-import { StorageService } from './storage.js';
+import { StorageService, JAR_TEMPLATES } from './storage.js';
 import { JarEngine } from './jar.js';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -15,6 +16,45 @@ document.addEventListener('DOMContentLoaded', () => {
   const syncStatusText = document.getElementById('syncStatusText');
   const manualSyncBtn = document.getElementById('manualSyncBtn');
   
+  // Jar Switcher & Stage Elements
+  const jarSwitcherBtn = document.getElementById('jarSwitcherBtn');
+  const currentJarTitle = document.getElementById('currentJarTitle');
+  const currentJarStarCount = document.getElementById('currentJarStarCount');
+  const stageJarNamePill = document.getElementById('stageJarNamePill');
+  const panelActiveJarTag = document.getElementById('panelActiveJarTag');
+  const drawPanelActiveJarTag = document.getElementById('drawPanelActiveJarTag');
+  const mobileAddJarTag = document.getElementById('mobileAddJarTag');
+  const promptsJarSubtitle = document.getElementById('promptsJarSubtitle');
+  const historyJarSubtitle = document.getElementById('historyJarSubtitle');
+  const starCountDisplay = document.getElementById('starCountDisplay');
+
+  // Jars Management Drawer
+  const jarsDrawer = document.getElementById('jarsDrawer');
+  const jarsDrawerOverlay = document.getElementById('jarsDrawerOverlay');
+  const closeJarsDrawerBtn = document.getElementById('closeJarsDrawerBtn');
+  const openCreateJarBtn = document.getElementById('openCreateJarBtn');
+  const jarsListContainer = document.getElementById('jarsListContainer');
+
+  // Create / Edit Jar Modal
+  const jarModalOverlay = document.getElementById('jarModalOverlay');
+  const jarModalTitle = document.getElementById('jarModalTitle');
+  const jarModalSubtitle = document.getElementById('jarModalSubtitle');
+  const jarForm = document.getElementById('jarForm');
+  const jarEditId = document.getElementById('jarEditId');
+  const jarNameInput = document.getElementById('jarNameInput');
+  const jarDescInput = document.getElementById('jarDescInput');
+  const jarTemplateGroup = document.getElementById('jarTemplateGroup');
+  const templateChipBtns = document.querySelectorAll('#jarTemplatePicker .template-chip');
+  const saveJarSubmitBtn = document.getElementById('saveJarSubmitBtn');
+  const cancelJarModalBtn = document.getElementById('cancelJarModalBtn');
+
+  // Move Activity Modal
+  const moveModalOverlay = document.getElementById('moveModalOverlay');
+  const moveActivityId = document.getElementById('moveActivityId');
+  const moveModalPromptTitle = document.getElementById('moveModalPromptTitle');
+  const moveJarsListContainer = document.getElementById('moveJarsListContainer');
+  const cancelMoveBtn = document.getElementById('cancelMoveBtn');
+
   // Desktop Add Form
   const addForm = document.getElementById('addActivityForm');
   const timePresets = document.querySelectorAll('#timePresets .chip');
@@ -38,6 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const popupTaskTitle = document.getElementById('popupTaskTitle');
   const popupCategoryBadge = document.getElementById('popupCategoryBadge');
   const popupTimeBadge = document.getElementById('popupTimeBadge');
+  const popupJarBadge = document.getElementById('popupJarBadge');
   const popupTaskLink = document.getElementById('popupTaskLink');
   const resolutionModal = document.getElementById('resolutionModalOverlay');
   
@@ -49,14 +90,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const accountDrawer = document.getElementById('accountDrawer');
   const accountOverlay = document.getElementById('accountDrawerOverlay');
 
+  // History Filter Tabs
+  const historyTabBtns = document.querySelectorAll('#historyFilterTabs .history-tab-btn');
+  const histCountCurrent = document.getElementById('histCountCurrent');
+  const histCountAll = document.getElementById('histCountAll');
+
   // Bottom Tabs (Mobile)
   const tabJarBtn = document.getElementById('tabJarBtn');
+  const tabJarsBtn = document.getElementById('tabJarsBtn');
   const tabAddStarBtn = document.getElementById('tabAddStarBtn');
   const tabPromptsBtn = document.getElementById('tabPromptsBtn');
   const tabHistoryBtn = document.getElementById('tabHistoryBtn');
-  const tabAccountBtn = document.getElementById('tabAccountBtn');
 
-  // Edit Modal
+  // Edit Prompt Modal
   const editModalOverlay = document.getElementById('editModalOverlay');
   const editActivityForm = document.getElementById('editActivityForm');
   const editTaskId = document.getElementById('editTaskId');
@@ -82,22 +128,9 @@ document.addEventListener('DOMContentLoaded', () => {
   let isDrawType = 'any';
   let selectedDrawTime = 30;
   let isSignUpMode = false;
-  let shakeCooldown = false;
-
-  // Initialize Jar with saved activities
-  function refreshJarAndUI() {
-    const activities = storage.getActivities();
-    jarEngine.syncStarsWithActivities(activities);
-    updateStarCounter();
-    renderHistory();
-    renderPromptsList();
-    updateAccountUI();
-  }
-
-  jarEngine.onAssetsLoaded = () => {
-    refreshJarAndUI();
-  };
-  refreshJarAndUI();
+  let currentHistoryScope = 'current'; // 'current' | 'all'
+  let selectedJarTemplate = 'blank';
+  let isEditingJar = false;
 
   // --------------------------------------------------------------------------
   // UI Helpers & Toasts
@@ -123,13 +156,263 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 3200);
   }
 
-  function updateStarCounter() {
-    const count = storage.getActivities().length;
-    const badge = document.getElementById('starCountDisplay');
-    if (badge) {
-      badge.textContent = `${count} ${count === 1 ? 'Star' : 'Stars'}`;
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  }
+
+  // --------------------------------------------------------------------------
+  // Multi-Jar Synchronization & UI Refresh
+  // --------------------------------------------------------------------------
+  function updateActiveJarLabels() {
+    const jar = storage.getActiveJar();
+    if (!jar) return;
+
+    const count = (jar.activities || []).length;
+    const starCountText = `${count} ${count === 1 ? 'star' : 'stars'}`;
+
+    if (currentJarTitle) currentJarTitle.textContent = jar.name;
+    if (currentJarStarCount) currentJarStarCount.textContent = starCountText;
+    
+    if (stageJarNamePill) stageJarNamePill.textContent = jar.name;
+    if (panelActiveJarTag) panelActiveJarTag.textContent = `Fold into: ${jar.name}`;
+    if (drawPanelActiveJarTag) drawPanelActiveJarTag.textContent = `From: ${jar.name}`;
+    if (mobileAddJarTag) mobileAddJarTag.textContent = `Fold into: ${jar.name}`;
+    if (promptsJarSubtitle) promptsJarSubtitle.textContent = jar.name;
+    if (historyJarSubtitle) historyJarSubtitle.textContent = jar.name;
+    
+    if (starCountDisplay) {
+      starCountDisplay.textContent = `${count} ${count === 1 ? 'Star' : 'Stars'}`;
     }
   }
+
+  function updateUIState() {
+    updateActiveJarLabels();
+    renderJarsList();
+    renderPromptsList();
+    renderHistory();
+    updateAccountUI();
+  }
+
+  function refreshJarAndUI(forceReset = false) {
+    updateActiveJarLabels();
+    const activities = storage.getActivities();
+    jarEngine.syncStarsWithActivities(activities, forceReset);
+    renderJarsList();
+    renderPromptsList();
+    renderHistory();
+    updateAccountUI();
+  }
+
+  jarEngine.onAssetsLoaded = () => {
+    refreshJarAndUI(true);
+  };
+  refreshJarAndUI(true);
+
+  // --------------------------------------------------------------------------
+  // Jars Management Drawer & Switcher
+  // --------------------------------------------------------------------------
+  function openJarsDrawer() {
+    renderJarsList();
+    jarsDrawer.classList.add('active');
+    jarsDrawerOverlay.classList.add('active');
+  }
+
+  function closeJarsDrawer() {
+    jarsDrawer.classList.remove('active');
+    jarsDrawerOverlay.classList.remove('active');
+  }
+
+  if (jarSwitcherBtn) jarSwitcherBtn.addEventListener('click', openJarsDrawer);
+  if (closeJarsDrawerBtn) closeJarsDrawerBtn.addEventListener('click', closeJarsDrawer);
+  if (jarsDrawerOverlay) jarsDrawerOverlay.addEventListener('click', closeJarsDrawer);
+
+  function renderJarsList() {
+    if (!jarsListContainer) return;
+    const jars = storage.getJars();
+    const activeId = storage.getActiveJarId();
+
+    jarsListContainer.innerHTML = jars.map(jar => {
+      const isActive = jar.id === activeId;
+      const starCount = (jar.activities || []).length;
+      const histCount = (jar.history || []).length;
+      const canDelete = jars.length > 1;
+
+      return `
+        <div class="jar-card ${isActive ? 'active-jar' : ''}" data-jar-id="${jar.id}">
+          <div class="jar-card-top">
+            <div class="jar-card-info">
+              <div class="jar-card-title">
+                <span>${escapeHtml(jar.name)}</span>
+              </div>
+              ${jar.description ? `<div class="jar-card-desc">${escapeHtml(jar.description)}</div>` : ''}
+              <div class="jar-card-badges">
+                ${isActive ? `<span class="jar-card-badge active-badge">Active Jar</span>` : ''}
+                <span class="jar-card-badge stars-badge">${starCount} ${starCount === 1 ? 'star' : 'stars'}</span>
+                <span class="jar-card-badge hist-badge">${histCount} completed</span>
+              </div>
+            </div>
+            <div class="jar-card-actions" onclick="event.stopPropagation();">
+              <button class="jar-action-icon-btn btn-edit-jar" data-jar-id="${jar.id}" title="Rename & Edit Jar">
+                ✎
+              </button>
+              ${canDelete ? `
+                <button class="jar-action-icon-btn delete btn-delete-jar" data-jar-id="${jar.id}" title="Delete Jar">
+                  🗑
+                </button>
+              ` : ''}
+            </div>
+          </div>
+          ${!isActive ? `
+            <button class="btn-secondary btn-switch-jar" data-jar-id="${jar.id}" style="width: 100%; margin-top: 0.5rem; padding: 0.45rem; font-size: 0.8rem;">
+              Switch to this Jar
+            </button>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+
+    // Switch jar click
+    jarsListContainer.querySelectorAll('.jar-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.jar-card-actions')) return;
+        const id = card.dataset.jarId;
+        if (id && id !== activeId) {
+          switchJar(id);
+        }
+      });
+    });
+
+    jarsListContainer.querySelectorAll('.btn-switch-jar').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        switchJar(btn.dataset.jarId);
+      });
+    });
+
+    // Edit jar
+    jarsListContainer.querySelectorAll('.btn-edit-jar').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const jar = storage.getJars().find(j => j.id === btn.dataset.jarId);
+        if (jar) openEditJarModal(jar);
+      });
+    });
+
+    // Delete jar
+    jarsListContainer.querySelectorAll('.btn-delete-jar').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const jar = storage.getJars().find(j => j.id === btn.dataset.jarId);
+        if (jar && confirm(`Are you sure you want to delete "${jar.name}" and all of its folded stars and history?`)) {
+          storage.deleteJar(jar.id);
+          refreshJarAndUI();
+          triggerHaptic([50, 40]);
+          showToast(`Deleted "${jar.name}".`);
+        }
+      });
+    });
+  }
+
+  function switchJar(jarId) {
+    suppressMotion(2500);
+    if (storage.setActiveJar(jarId)) {
+      triggerHaptic([40, 50, 40]);
+      const activeJar = storage.getActiveJar();
+      refreshJarAndUI(true);
+      closeJarsDrawer();
+      showToast(`Switched to "${activeJar.name}".`);
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Create / Edit Jar Modal Handling
+  // --------------------------------------------------------------------------
+  function openCreateJarModal() {
+    isEditingJar = false;
+    jarModalTitle.textContent = 'Create a New Star Jar';
+    jarModalSubtitle.textContent = 'Give your jar a unique name and purpose for your activities.';
+    saveJarSubmitBtn.textContent = 'Create Jar';
+    jarEditId.value = '';
+    jarNameInput.value = '';
+    jarDescInput.value = '';
+    jarTemplateGroup.style.display = 'block';
+
+    selectedJarTemplate = 'blank';
+    templateChipBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.template === 'blank'));
+
+    jarModalOverlay.classList.add('active');
+    setTimeout(() => jarNameInput.focus(), 250);
+  }
+
+  function openEditJarModal(jar) {
+    isEditingJar = true;
+    jarModalTitle.textContent = 'Edit Star Jar';
+    jarModalSubtitle.textContent = 'Update your jar name or purpose description.';
+    saveJarSubmitBtn.textContent = 'Save Changes';
+    jarEditId.value = jar.id;
+    jarNameInput.value = jar.name;
+    jarDescInput.value = jar.description || '';
+    jarTemplateGroup.style.display = 'none';
+
+    jarModalOverlay.classList.add('active');
+    setTimeout(() => jarNameInput.focus(), 250);
+  }
+
+  function closeJarModal() {
+    jarModalOverlay.classList.remove('active');
+  }
+
+  if (openCreateJarBtn) openCreateJarBtn.addEventListener('click', openCreateJarModal);
+  if (cancelJarModalBtn) cancelJarModalBtn.addEventListener('click', closeJarModal);
+  jarModalOverlay.addEventListener('click', (e) => {
+    if (e.target === jarModalOverlay) closeJarModal();
+  });
+
+  templateChipBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      templateChipBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedJarTemplate = btn.dataset.template;
+
+      const templateData = JAR_TEMPLATES[selectedJarTemplate];
+      if (templateData && templateData.name && !isEditingJar) {
+        if (!jarNameInput.value || Object.values(JAR_TEMPLATES).some(t => t.name === jarNameInput.value)) {
+          jarNameInput.value = templateData.name;
+        }
+        if (!jarDescInput.value || Object.values(JAR_TEMPLATES).some(t => t.description === jarDescInput.value)) {
+          jarDescInput.value = templateData.description;
+        }
+      }
+    });
+  });
+
+  jarForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = jarNameInput.value.trim();
+    const description = jarDescInput.value.trim();
+
+    if (!name) return;
+
+    if (isEditingJar) {
+      const id = jarEditId.value;
+      storage.updateJar(id, { name, description });
+      refreshJarAndUI(false);
+      closeJarModal();
+      showToast(`Updated "${name}".`);
+    } else {
+      const newJar = storage.createJar({
+        name,
+        description,
+        template: selectedJarTemplate
+      });
+      refreshJarAndUI(true);
+      closeJarModal();
+      closeJarsDrawer();
+      triggerHaptic([40, 60, 40]);
+      showToast(`Created "${newJar.name}" with ${newJar.activities.length} stars.`);
+    }
+  });
 
   // --------------------------------------------------------------------------
   // Mobile Bottom Navigation Tabs
@@ -144,9 +427,17 @@ document.addEventListener('DOMContentLoaded', () => {
       setActiveTab(tabJarBtn);
       closeHistory();
       closePromptsDrawer();
+      closeJarsDrawer();
       closeAccountDrawer();
       closeMobileAddModal();
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  }
+
+  if (tabJarsBtn) {
+    tabJarsBtn.addEventListener('click', () => {
+      setActiveTab(tabJarsBtn);
+      openJarsDrawer();
     });
   }
 
@@ -181,18 +472,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  if (tabAccountBtn) {
-    tabAccountBtn.addEventListener('click', () => {
-      setActiveTab(tabAccountBtn);
-      openAccountDrawer();
-    });
-  }
-
   // --------------------------------------------------------------------------
   // Mobile Add Star Modal (Bottom Sheet)
   // --------------------------------------------------------------------------
   function openMobileAddModal() {
     if (mobileAddModal) {
+      updateActiveJarLabels();
       mobileAddModal.classList.add('active');
       const input = document.getElementById('mobileTaskTitle');
       if (input) setTimeout(() => input.focus(), 250);
@@ -246,11 +531,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
       storage.addActivity(newActivity);
       jarEngine.spawnStar(newActivity, true);
-      updateStarCounter();
-      renderPromptsList();
+      updateUIState();
 
       triggerHaptic([40, 30, 40]);
-      showToast(`✨ Folded "${title}" into the jar!`);
+      const activeJar = storage.getActiveJar();
+      showToast(`Folded "${title}" into ${activeJar.name}.`);
       mobileAddForm.reset();
       mobileTaskTimeInput.value = 15;
       mobileTimePresets.forEach(c => c.classList.toggle('active', c.dataset.time === '15'));
@@ -297,11 +582,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     storage.addActivity(newActivity);
     jarEngine.spawnStar(newActivity, true);
-    updateStarCounter();
-    renderPromptsList();
+    updateUIState();
 
     triggerHaptic([40, 30, 40]);
-    showToast(`✨ Folded "${title}" into the jar!`);
+    const activeJar = storage.getActiveJar();
+    showToast(`Folded "${title}" into ${activeJar.name}.`);
     addForm.reset();
     taskTimeInput.value = 15;
     timePresets.forEach(c => c.classList.toggle('active', c.dataset.time === '15'));
@@ -328,8 +613,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function performDraw() {
     const activities = storage.getActivities();
+    const activeJar = storage.getActiveJar();
+
     if (activities.length === 0) {
-      showToast('Your jar is currently empty! Add some stars first.');
+      showToast(`"${activeJar.name}" is currently empty. Fold a new star above.`);
       return;
     }
 
@@ -342,14 +629,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     if (filtered.length === 0) {
-      showToast('No stars match your exact time/mood! Shaking for any activity...');
+      showToast('No stars match your exact time/mood. Shaking for any activity...');
     }
 
     const pool = filtered.length > 0 ? filtered : activities;
     const selected = pool[Math.floor(Math.random() * pool.length)];
-
-    // Block motion sensor drawing
-    shakeCooldown = true;
 
     triggerHaptic([50, 40, 50, 40, 60]);
     jarEngine.shake(900);
@@ -358,68 +642,65 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --------------------------------------------------------------------------
-  // Mobile Shake Sensor (Noise-Gated Directional Reversal Engine)
+  // Mobile Shake Sensor & Motion Suppression System
   // --------------------------------------------------------------------------
   let lastX = null, lastY = null, lastZ = null;
   let lastDeltaX = 0, lastDeltaY = 0, lastDeltaZ = 0;
   let accumulatedMotion = 0;
   let lastDrawTime = 0;
   let motionPermissionGranted = false;
-  let lastFormInteractionTime = 0;
+  let motionSuppressedUntil = 0;
   let reversalCount = 0;
   let lastReversalTime = 0;
 
-  // Calibrated thresholds for physical phone shake without false triggers from typing:
-  const MIN_DELTA_NOISE_GATE = 4.2;   // Discard sub-4.2 m/s² micro-deltas (typing/tapping noise)
-  const MOTION_TRIGGER_ENERGY = 16.0; // Requires firm deliberate shaking energy
-  const MOTION_DECAY = 0.78;          // Fast energy decay
-  const DRAW_COOLDOWN_MS = 2500;      // 2.5s cooldown after a draw
+  // Calibrated for effortless natural wrist shake without false button triggers
+  const MIN_DELTA_NOISE_GATE = 2.6;       // Responsive to standard wrist shaking
+  const MOTION_TRIGGER_ENERGY = 9.5;       // Comfortable threshold: natural 1-2s shake
+  const MOTION_DECAY = 0.86;               // Fluid accumulation across cycles
+  const REVERSAL_THRESHOLD = 1.6;          // Wrist oscillation threshold
+  const DRAW_COOLDOWN_MS = 2500;
 
   const mobileSensorPill = document.getElementById('mobileSensorPill');
   const motionPermissionBtn = document.getElementById('requestMotionPermissionBtn');
 
-  // Typing & Form interaction tracking to suppress shake false triggers
-  function updateFormInteractionLock() {
-    lastFormInteractionTime = Date.now();
+  function suppressMotion(ms = 2200) {
     accumulatedMotion = 0;
     reversalCount = 0;
     lastX = null;
     lastY = null;
     lastZ = null;
+    motionSuppressedUntil = Math.max(motionSuppressedUntil, Date.now() + ms);
   }
 
-  document.addEventListener('focusin', updateFormInteractionLock, { passive: true });
-  document.addEventListener('focusout', updateFormInteractionLock, { passive: true });
-  document.addEventListener('input', updateFormInteractionLock, { passive: true });
-  document.addEventListener('keydown', updateFormInteractionLock, { passive: true });
-  document.addEventListener('keyup', updateFormInteractionLock, { passive: true });
+  function handleUIInteraction(e) {
+    const target = e.target;
+    if (!target) return;
+    // Suppress motion when tapping any button, tab, card, input, drawer, or modal
+    if (target.closest('button, a, input, textarea, select, form, .chip, .type-toggle-btn, .jar-card, .drawer, .modal-overlay, .bottom-nav-bar, .app-header, .panel, .icon-choice, .template-chip, .prompt-item, .history-item, .history-tab-btn')) {
+      // Only the explicit Shake buttons bypass the suppression
+      if (!target.closest('#shakeJarBtn, #mobileShakeBtn')) {
+        suppressMotion(2200);
+      }
+    }
+  }
 
-  document.querySelectorAll('input, textarea, select, form, .chip, .type-toggle-btn').forEach(el => {
-    el.addEventListener('touchstart', updateFormInteractionLock, { passive: true });
-    el.addEventListener('pointerdown', updateFormInteractionLock, { passive: true });
-  });
+  document.addEventListener('pointerdown', handleUIInteraction, { passive: true });
+  document.addEventListener('touchstart', handleUIInteraction, { passive: true });
+  document.addEventListener('click', handleUIInteraction, { passive: true });
+  document.addEventListener('focusin', () => suppressMotion(2500), { passive: true });
+  document.addEventListener('focusout', () => suppressMotion(2500), { passive: true });
+  document.addEventListener('input', () => suppressMotion(2500), { passive: true });
+  document.addEventListener('keydown', () => suppressMotion(2500), { passive: true });
 
   function isMotionSuppressed() {
-    // 1. Cooldown or jar currently animating
+    if (Date.now() < motionSuppressedUntil) return true;
     if (jarEngine.isShaking || (Date.now() - lastDrawTime < DRAW_COOLDOWN_MS)) return true;
-
-    // 2. Active input/textarea focus
     const activeEl = document.activeElement;
     if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT' || activeEl.isContentEditable)) {
       return true;
     }
-
-    // 3. User typed or interacted with form controls within last 2.5 seconds
-    if (Date.now() - lastFormInteractionTime < 2500) {
-      return true;
-    }
-
-    // 4. Any modal or side drawer is currently visible
     const openModalOrDrawer = document.querySelector('.modal-overlay.active, .drawer.active');
-    if (openModalOrDrawer) {
-      return true;
-    }
-
+    if (openModalOrDrawer) return true;
     return false;
   }
 
@@ -455,7 +736,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const frameMag = Math.hypot(deltaX, deltaY * 1.15, deltaZ);
 
-    // NOISE GATE: Discard frame if delta is below threshold
     if (frameMag < MIN_DELTA_NOISE_GATE) {
       accumulatedMotion *= MOTION_DECAY;
       if (accumulatedMotion < 0.2) accumulatedMotion = 0;
@@ -463,14 +743,13 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Check for directional reversals (sign changes in acceleration delta)
     const now = Date.now();
-    const isReversalX = (deltaX > 2.5 && lastDeltaX < -2.5) || (deltaX < -2.5 && lastDeltaX > 2.5);
-    const isReversalY = (deltaY > 2.5 && lastDeltaY < -2.5) || (deltaY < -2.5 && lastDeltaY > 2.5);
-    const isReversalZ = (deltaZ > 2.5 && lastDeltaZ < -2.5) || (deltaZ < -2.5 && lastDeltaZ > 2.5);
+    const isReversalX = (deltaX > REVERSAL_THRESHOLD && lastDeltaX < -REVERSAL_THRESHOLD) || (deltaX < -REVERSAL_THRESHOLD && lastDeltaX > REVERSAL_THRESHOLD);
+    const isReversalY = (deltaY > REVERSAL_THRESHOLD && lastDeltaY < -REVERSAL_THRESHOLD) || (deltaY < -REVERSAL_THRESHOLD && lastDeltaY > REVERSAL_THRESHOLD);
+    const isReversalZ = (deltaZ > REVERSAL_THRESHOLD && lastDeltaZ < -REVERSAL_THRESHOLD) || (deltaZ < -REVERSAL_THRESHOLD && lastDeltaZ > REVERSAL_THRESHOLD);
 
     if (isReversalX || isReversalY || isReversalZ) {
-      if (now - lastReversalTime < 650) {
+      if (now - lastReversalTime < 700) {
         reversalCount++;
       } else {
         reversalCount = 1;
@@ -482,10 +761,8 @@ document.addEventListener('DOMContentLoaded', () => {
     lastDeltaY = deltaY;
     lastDeltaZ = deltaZ;
 
-    // Accumulate motion energy with fast decay
     accumulatedMotion = (accumulatedMotion * MOTION_DECAY) + frameMag;
 
-    // Trigger draw ONLY if energy threshold is reached AND at least 2 directional reversals detected
     if (accumulatedMotion >= MOTION_TRIGGER_ENERGY && reversalCount >= 2) {
       accumulatedMotion = 0;
       reversalCount = 0;
@@ -507,7 +784,6 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
   }
 
-  // Detect if browser requires explicit permission (iOS 13+ Safari)
   const isIOSPermissionRequired = (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function');
 
   if (isIOSPermissionRequired) {
@@ -533,7 +809,7 @@ document.addEventListener('DOMContentLoaded', () => {
               motionPermissionBtn.innerHTML = '<span>✓ Motion Sensor Active — Shake Phone!</span>';
               motionPermissionBtn.style.background = 'linear-gradient(135deg, #06d6a0, #118ab2)';
               motionPermissionBtn.style.color = '#fff';
-              showToast('✨ Motion sensor activated! Shake your phone to draw.');
+              showToast('Motion sensor activated! Shake your phone to draw.');
               setTimeout(() => {
                 if (mobileSensorPill) {
                   mobileSensorPill.style.transition = 'opacity 0.4s ease';
@@ -564,7 +840,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (mobileSensorPill) mobileSensorPill.style.display = 'none';
   }
 
-  // Shake/draw buttons: draw a star
   function drawWithPermissionCheck(e) {
     if (e) {
       e.preventDefault();
@@ -589,6 +864,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --------------------------------------------------------------------------
   function openTaskModal(activity) {
     currentDrawnActivity = activity;
+    const activeJar = storage.getActiveJar();
 
     popupStarImage.src = `assets/stars/${activity.color || 'star_pink.png'}`;
     popupTaskTitle.textContent = activity.title;
@@ -596,6 +872,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     popupCategoryBadge.className = `badge badge-${activity.type}`;
     popupCategoryBadge.textContent = activity.type === 'both' ? 'Creative & Productive' : activity.type;
+
+    if (popupJarBadge && activeJar) {
+      popupJarBadge.textContent = activeJar.name;
+    }
 
     if (activity.link && activity.link.startsWith('http')) {
       popupTaskLink.href = activity.link;
@@ -641,7 +921,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Tapping backdrop overlay also dismisses the prompt modal
   taskModal.addEventListener('click', (e) => {
     if (e.target === taskModal) {
       closeTaskModal();
@@ -658,7 +937,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // --------------------------------------------------------------------------
-  // Task Completion & Resolution
+  // Task Completion & Resolution (Logged into Active Jar)
   // --------------------------------------------------------------------------
   document.getElementById('markCompleteBtn').addEventListener('click', () => {
     closeTaskModal();
@@ -667,27 +946,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('keepStarInJarBtn').addEventListener('click', () => {
     if (currentDrawnActivity) {
-      storage.logCompletion(currentDrawnActivity, true);
+      const activeJar = storage.getActiveJar();
+      storage.logCompletion(currentDrawnActivity, true, activeJar.id);
       triggerHaptic([40, 50, 40]);
-      showToast(`🎉 Logged "${currentDrawnActivity.title}"! Kept in jar.`);
-      renderHistory();
+      showToast(`Logged "${currentDrawnActivity.title}" in ${activeJar.name}.`);
+      refreshJarAndUI();
     }
     resolutionModal.classList.remove('active');
   });
 
   document.getElementById('removeStarFromJarBtn').addEventListener('click', () => {
     if (currentDrawnActivity) {
-      storage.logCompletion(currentDrawnActivity, false);
-      storage.removeActivity(currentDrawnActivity.id);
+      const activeJar = storage.getActiveJar();
+      storage.logCompletion(currentDrawnActivity, false, activeJar.id);
+      storage.removeActivity(currentDrawnActivity.id, activeJar.id);
       refreshJarAndUI();
       triggerHaptic([60, 40, 60]);
-      showToast(`🌟 Completed & removed star from jar!`);
+      showToast(`Completed and removed from ${activeJar.name}.`);
     }
     resolutionModal.classList.remove('active');
   });
 
   // --------------------------------------------------------------------------
-  // All Prompts Drawer & Management
+  // All Prompts Drawer & Management (Scoped to Jar)
   // --------------------------------------------------------------------------
   function openPromptsDrawer() {
     renderPromptsList();
@@ -704,14 +985,32 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('closePromptsDrawerBtn').addEventListener('click', closePromptsDrawer);
   promptsOverlay.addEventListener('click', closePromptsDrawer);
 
+  const drawerAddPromptBtn = document.getElementById('drawerAddPromptBtn');
+  if (drawerAddPromptBtn) {
+    drawerAddPromptBtn.addEventListener('click', () => {
+      closePromptsDrawer();
+      if (window.innerWidth <= 768) {
+        openMobileAddModal();
+      } else {
+        const titleInput = document.getElementById('taskTitle');
+        if (titleInput) {
+          titleInput.focus();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }
+    });
+  }
+
   function renderPromptsList() {
     const container = document.getElementById('promptsListContainer');
     const activities = storage.getActivities();
+    const activeJar = storage.getActiveJar();
+    const allJars = storage.getJars();
 
     if (activities.length === 0) {
       container.innerHTML = `
         <div style="text-align: center; color: var(--text-muted); padding: 2rem 0; font-size: 0.9rem;">
-          No stars in the jar yet! Fold a new star to get started.
+          No stars in "${activeJar ? escapeHtml(activeJar.name) : 'this jar'}" yet. Fold a new star to get started.
         </div>`;
       return;
     }
@@ -745,9 +1044,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.id;
         const act = storage.getActivities().find(a => a.id === id);
-        if (act) {
-          openEditModal(act);
-        }
+        if (act) openEditModal(act);
       });
     });
 
@@ -755,14 +1052,62 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.id;
         const act = storage.getActivities().find(a => a.id === id);
-        if (act && confirm(`Remove "${act.title}" from the jar?`)) {
+        if (act && confirm(`Remove "${act.title}" from this jar?`)) {
           storage.removeActivity(id);
           refreshJarAndUI();
-          showToast(`🗑 Removed "${act.title}" from jar.`);
+          showToast(`Removed "${act.title}" from jar.`);
         }
       });
     });
   }
+
+  // --------------------------------------------------------------------------
+  // Move Activity Modal Handling
+  // --------------------------------------------------------------------------
+  function openMoveModal(activity) {
+    moveActivityId.value = activity.id;
+    moveModalPromptTitle.textContent = `Move "${activity.title}" to another Star Jar:`;
+    
+    const jars = storage.getJars();
+    const currentJarId = storage.getActiveJarId();
+    const targetJars = jars.filter(j => j.id !== currentJarId);
+
+    moveJarsListContainer.innerHTML = targetJars.map(jar => `
+      <button type="button" class="move-jar-option" data-target-jar-id="${jar.id}">
+        <span style="display: flex; align-items: center; gap: 0.5rem;">
+          <strong style="font-size: 1rem;">${escapeHtml(jar.name)}</strong>
+        </span>
+        <span style="font-size: 0.78rem; color: var(--primary-accent);">
+          ${(jar.activities || []).length} stars ➔
+        </span>
+      </button>
+    `).join('');
+
+    moveJarsListContainer.querySelectorAll('.move-jar-option').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetId = btn.dataset.targetJarId;
+        const targetJar = jars.find(j => j.id === targetId);
+        if (targetId && targetJar) {
+          storage.moveActivity(activity.id, currentJarId, targetId);
+          refreshJarAndUI();
+          closeMoveModal();
+          triggerHaptic([30, 40]);
+          showToast(`Moved "${activity.title}" to "${targetJar.name}".`);
+        }
+      });
+    });
+
+    moveModalOverlay.classList.add('active');
+  }
+
+  function closeMoveModal() {
+    moveModalOverlay.classList.remove('active');
+  }
+
+  if (cancelMoveBtn) cancelMoveBtn.addEventListener('click', closeMoveModal);
+  moveModalOverlay.addEventListener('click', (e) => {
+    if (e.target === moveModalOverlay) closeMoveModal();
+  });
 
   // --------------------------------------------------------------------------
   // Edit Prompt Modal Handling
@@ -813,11 +1158,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     refreshJarAndUI();
     closeEditModal();
-    showToast(`✓ Updated "${title}"!`);
+    showToast(`Updated "${title}".`);
   });
 
   // --------------------------------------------------------------------------
-  // History Drawer
+  // History Drawer (Scoped per Jar + All Jars View)
   // --------------------------------------------------------------------------
   function openHistory() {
     renderHistory();
@@ -834,19 +1179,44 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('closeHistoryDrawerBtn').addEventListener('click', closeHistory);
   historyOverlay.addEventListener('click', closeHistory);
 
+  historyTabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      historyTabBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentHistoryScope = btn.dataset.historyScope || 'current';
+      renderHistory();
+    });
+  });
+
   function renderHistory() {
     const container = document.getElementById('historyListContainer');
-    const history = storage.getHistory();
+    const clearBtn = document.getElementById('clearHistoryBtn');
+    const activeJar = storage.getActiveJar();
+    const currentHist = storage.getHistory();
+    const allHist = storage.getHistory('all');
 
-    if (history.length === 0) {
+    if (histCountCurrent) histCountCurrent.textContent = currentHist.length;
+    if (histCountAll) histCountAll.textContent = allHist.length;
+
+    const displayList = currentHistoryScope === 'all' ? allHist : currentHist;
+
+    if (clearBtn) {
+      clearBtn.textContent = currentHistoryScope === 'all'
+        ? 'Clear History across All Jars'
+        : `Clear History for ${activeJar ? activeJar.name : 'this Jar'}`;
+    }
+
+    if (displayList.length === 0) {
       container.innerHTML = `
         <div style="text-align: center; color: var(--text-muted); padding: 2rem 0; font-size: 0.9rem;">
-          No completed activities yet. Shake the jar to draw your first inspiration!
+          ${currentHistoryScope === 'all' 
+            ? 'No completed activities recorded across any jars yet.' 
+            : `No completed activities in "${activeJar ? escapeHtml(activeJar.name) : 'this jar'}" yet.`}
         </div>`;
       return;
     }
 
-    container.innerHTML = history.map(item => {
+    container.innerHTML = displayList.map(item => {
       const date = new Date(item.completedAt);
       const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       return `
@@ -854,6 +1224,9 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="history-item-title">${escapeHtml(item.title)}</div>
           <div class="history-item-meta">
             <span class="badge badge-${item.type}" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;">${item.type}</span>
+            ${currentHistoryScope === 'all' ? `
+              <span class="badge badge-jar" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;">${escapeHtml(item.jarName || 'Jar')}</span>
+            ` : ''}
             <span>${item.timeSpent}m • ${dateStr}</span>
           </div>
         </div>
@@ -862,8 +1235,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   document.getElementById('clearHistoryBtn').addEventListener('click', () => {
-    if (confirm('Are you sure you want to clear your activity history?')) {
-      storage.clearHistory();
+    const activeJar = storage.getActiveJar();
+    const promptMsg = currentHistoryScope === 'all'
+      ? 'Are you sure you want to clear activity history across ALL star jars?'
+      : `Are you sure you want to clear history for "${activeJar ? activeJar.name : 'this jar'}"?`;
+
+    if (confirm(promptMsg)) {
+      storage.clearHistory(currentHistoryScope === 'all' ? 'all' : null);
       renderHistory();
       showToast('Activity history cleared.');
     }
@@ -930,10 +1308,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       if (isSignUpMode) {
         await storage.registerUser(email, password, name);
-        showToast(`✨ Welcome, ${name || email}! Account created & saved to cloud.`);
+        showToast(`Welcome, ${name || email}! Jars & account saved to cloud.`);
       } else {
         await storage.loginUser(email, password);
-        showToast(`🌟 Welcome back! Progress synced across your devices.`);
+        showToast(`Welcome back! Jars synced across your devices.`);
       }
       refreshJarAndUI();
       authForm.reset();
@@ -941,7 +1319,6 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) {
       const msg = err.message || 'Authentication error.';
       showToast(msg);
-      // If user attempted login but no account exists, auto-switch form to Sign Up
       if (!isSignUpMode && msg.toLowerCase().includes('no account found')) {
         isSignUpMode = true;
         authSubmitBtn.textContent = 'Sign Up';
@@ -966,7 +1343,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (res.success) {
           refreshJarAndUI();
           updateAccountUI();
-          showToast(`✓ Cloud sync complete (${res.activitiesCount} stars)!`);
+          showToast(`Cloud sync complete (${res.jarsCount || storage.getJars().length} jars).`);
         } else {
           showToast('Sync failed: ' + (res.error || 'Server error'));
         }
@@ -1031,9 +1408,4 @@ document.addEventListener('DOMContentLoaded', () => {
     updateAccountUI();
     showToast('Logged out.');
   });
-
-  function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-  }
 });

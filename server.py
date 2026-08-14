@@ -32,10 +32,16 @@ def init_db():
                 name TEXT NOT NULL,
                 activities TEXT NOT NULL,
                 history TEXT NOT NULL,
+                jars TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
         """)
+        # Ensure 'jars' column exists for existing databases
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN jars TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         conn.commit()
         conn.close()
 
@@ -73,6 +79,19 @@ def save_user_to_gcs(email, user_data):
     except Exception as e:
         print(f"Error saving user to GCS: {e}", file=sys.stderr)
         return False
+
+def build_jars_from_legacy(activities, history):
+    return [{
+        "id": "jar-default",
+        "name": "Main Star Jar",
+        "description": "Creative, productive, and mindful activities",
+        "icon": "",
+        "theme": "purple",
+        "activities": activities or [],
+        "history": history or [],
+        "createdAt": datetime.utcnow().isoformat() + "Z",
+        "isDefault": True
+    }]
 
 class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
@@ -125,24 +144,40 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
                     except:
                         history = []
                     
+                    jars = None
+                    if 'jars' in row.keys() and row['jars']:
+                        try:
+                            jars = json.loads(row['jars'])
+                        except:
+                            jars = None
+                    
+                    if not jars:
+                        jars = build_jars_from_legacy(activities, history)
+
                     user_data = {
                         'id': row['id'],
                         'email': row['email'],
                         'name': row['name'],
                         'activities': activities,
                         'history': history,
+                        'jars': jars,
                         'updated_at': row['updated_at']
                     }
 
             if user_data:
+                jars = user_data.get('jars')
+                if not jars:
+                    jars = build_jars_from_legacy(user_data.get('activities'), user_data.get('history'))
+
                 return self.send_json({
                     'success': True,
                     'user': {
                         'id': user_data['id'],
                         'email': user_data['email'],
                         'name': user_data['name'],
-                        'activities': user_data['activities'],
-                        'history': user_data['history'],
+                        'activities': user_data.get('activities', []),
+                        'history': user_data.get('history', []),
+                        'jars': jars,
                         'updatedAt': user_data.get('updated_at', user_data.get('updatedAt', ''))
                     }
                 })
@@ -168,6 +203,9 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
             name = req.get('name', '').strip() or email.split('@')[0]
             activities = req.get('activities', [])
             history = req.get('history', [])
+            jars = req.get('jars', None)
+            if not jars:
+                jars = build_jars_from_legacy(activities, history)
 
             if not email or not password:
                 return self.send_json({'error': 'Email and password are required.'}, 400)
@@ -187,6 +225,7 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
                     'name': name,
                     'activities': activities,
                     'history': history,
+                    'jars': jars,
                     'created_at': now_iso,
                     'updated_at': now_iso
                 }
@@ -202,11 +241,12 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
 
                 act_json = json.dumps(activities)
                 hist_json = json.dumps(history)
+                jars_json = json.dumps(jars)
 
                 cursor.execute("""
-                    INSERT INTO users (id, email, password, name, activities, history, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (user_id, email, password, name, act_json, hist_json, now_iso, now_iso))
+                    INSERT INTO users (id, email, password, name, activities, history, jars, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (user_id, email, password, name, act_json, hist_json, jars_json, now_iso, now_iso))
                 conn.commit()
                 conn.close()
 
@@ -218,6 +258,7 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
                     'name': name,
                     'activities': activities,
                     'history': history,
+                    'jars': jars,
                     'createdAt': now_iso
                 }
             })
@@ -249,6 +290,16 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
                         history = json.loads(row['history'])
                     except:
                         history = []
+                    
+                    jars = None
+                    if 'jars' in row.keys() and row['jars']:
+                        try:
+                            jars = json.loads(row['jars'])
+                        except:
+                            jars = None
+                    if not jars:
+                        jars = build_jars_from_legacy(activities, history)
+
                     user_data = {
                         'id': row['id'],
                         'email': row['email'],
@@ -256,6 +307,7 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
                         'name': row['name'],
                         'activities': activities,
                         'history': history,
+                        'jars': jars,
                         'updated_at': row['updated_at']
                     }
 
@@ -266,14 +318,19 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
             if saved_pw != password and saved_pw.strip() != password.strip():
                 return self.send_json({'error': 'Incorrect password. Please re-enter your password.'}, 401)
 
+            jars = user_data.get('jars')
+            if not jars:
+                jars = build_jars_from_legacy(user_data.get('activities'), user_data.get('history'))
+
             return self.send_json({
                 'success': True,
                 'user': {
                     'id': user_data['id'],
                     'email': user_data['email'],
                     'name': user_data['name'],
-                    'activities': user_data['activities'],
-                    'history': user_data['history'],
+                    'activities': user_data.get('activities', []),
+                    'history': user_data.get('history', []),
+                    'jars': jars,
                     'updatedAt': user_data.get('updated_at', user_data.get('updatedAt', ''))
                 }
             })
@@ -285,6 +342,9 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
             name = req.get('name', '').strip() or email.split('@')[0]
             activities = req.get('activities', [])
             history = req.get('history', [])
+            jars = req.get('jars', None)
+            if not jars:
+                jars = build_jars_from_legacy(activities, history)
 
             if not email:
                 return self.send_json({'error': 'Email is required.'}, 400)
@@ -296,6 +356,7 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
                 if user_data:
                     user_data['activities'] = activities
                     user_data['history'] = history
+                    user_data['jars'] = jars
                     user_data['updated_at'] = now_iso
                     if password:
                         user_data['password'] = password
@@ -310,6 +371,7 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
                         'name': name,
                         'activities': activities,
                         'history': history,
+                        'jars': jars,
                         'created_at': now_iso,
                         'updated_at': now_iso
                     }
@@ -324,19 +386,20 @@ class StarJarApiHandler(http.server.SimpleHTTPRequestHandler):
 
                 act_json = json.dumps(activities)
                 hist_json = json.dumps(history)
+                jars_json = json.dumps(jars)
 
                 if row:
                     cursor.execute("""
                         UPDATE users
-                        SET activities = ?, history = ?, updated_at = ?
+                        SET activities = ?, history = ?, jars = ?, updated_at = ?
                         WHERE lower(email) = ?
-                    """, (act_json, hist_json, now_iso, email))
+                    """, (act_json, hist_json, jars_json, now_iso, email))
                 else:
                     new_id = user_id or f"usr-{int(time.time() * 1000)}"
                     cursor.execute("""
-                        INSERT INTO users (id, email, password, name, activities, history, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (new_id, email, password or 'pass123', name, act_json, hist_json, now_iso, now_iso))
+                        INSERT INTO users (id, email, password, name, activities, history, jars, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (new_id, email, password or 'pass123', name, act_json, hist_json, jars_json, now_iso, now_iso))
 
                 conn.commit()
                 conn.close()

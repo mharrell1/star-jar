@@ -1,74 +1,71 @@
 # ⭐ The Star Jar
 
-A whimsical, interactive web app that lets you shake your phone (or click a button) to draw a random activity star out of a glass jar — like a digital version of a jar full of wishes.
+A whimsical, interactive web application that lets you shake your phone (or click a button) to draw a random activity star out of a glass jar — like a digital version of an origami wish jar.
 
 ---
 
 ## ✨ Features
 
-- **Shake to Draw** — Shake your iPhone in any direction (up/down, side-to-side, diagonal, circular) and a star pops out of the jar with an activity suggestion.
-- **Instant Popup** — The activity modal appears the moment a shake is detected with zero delay.
-- **Omnidirectional Motion Sensor** — High-sensitivity energy accumulator tracks 3D phone movement across all axes so even gentle motion triggers a draw.
-- **iOS Shake Permission Pill** — A floating pill prompts iOS users to enable the motion sensor via the native Safari permission dialog.
-- **Star Filter Controls** — Filter draws by available time (5–60 min) and mood (creative, productive, or any).
-- **Add Your Own Stars** — A full form to add custom activities with title, time, type, color, and optional link.
-- **Resolve Stars** — Mark drawn activities as done or skip back to the jar.
-- **Glassmorphism UI** — Dark-mode design with frosted-glass cards, smooth animations, and a real-time starfield background.
-- **PWA Ready** — Installable to the iOS home screen with a custom app icon.
-- **Real-time Physics** — Stars settle into the jar with gravity and turbulence when shaken.
+- **Multi-Jar Management & Switching** — Create multiple custom Star Jars for distinct purposes (e.g. *Focus & Productivity*, *Creative Sparks*, *Quick Wins*, *Fun & Games*, or *Custom Blank*). Switch between jars seamlessly anytime.
+- **Isolated History & Prompt Sets** — Each jar maintains its own separate pool of folded stars, completed history, and drawer archives.
+- **Shake to Draw** — Shake your iPhone or Android phone naturally to rattle the stars and pop open an activity prompt instantly.
+- **Calibrated Motion Sensitivity** — Tuned for natural 1–2 second wrist shakes with intelligent touch suppression so tapping buttons, tabs, or menus never triggers accidental shakes.
+- **Real-Time 2D Physics & Particle Engine** — Stars drop through the neck with realistic gravity, bounce off glass boundaries, and stack naturally at the bottom.
+- **Custom Star Creation** — Fold new stars into any active jar with title, time duration, mood/category (Creative, Productive, Fun, Both), star color, and optional link.
+- **Offline & Cloud Sync Resilient** — Works seamlessly offline, as an installed PWA, via local files, or synced in the cloud with user account persistence.
+- **Glassmorphism UI** — Rich dark-mode aesthetics featuring frosted glass cards, dynamic lighting, glowing star animations, and a real-time starfield background.
+- **PWA & Mobile Ready** — Responsive layout with bottom navigation tabs, drawer menus, and iOS home screen installation support.
 
 ---
 
-## 📱 Mobile Shake Sensor (iOS)
+## 📱 Mobile Shake Sensor
 
-On first visit from an iPhone:
-1. A **motion sensor pill** appears at the top of the screen.
-2. Tap it to trigger the iOS native permission dialog.
-3. Once granted, shake your phone **in any direction** — the jar rattles and your activity pops up instantly.
-
-The shake detection uses a **cumulative motion energy accumulator** with exponential decay:
-- Threshold: `1.4` energy units (sensitive to gentle motion)
-- Decay rate: `0.94` per frame (energy builds quickly across frames)
-- Vertical boost: `×1.25` on the Y-axis for up/down motion
-- 2-second cooldown between draws to prevent rapid-fire triggers
+On visiting from a mobile device:
+1. Tap **Enable Motion** when prompted to grant iOS / Android accelerometer permissions.
+2. Shake your phone naturally with a wrist motion — the jar rattles and your activity star is drawn instantly.
+3. Tapping any buttons, modals, or drawers automatically locks the motion sensor for 2.5 seconds to prevent false triggers from screen taps.
 
 ---
 
 ## 🛠 Local Development
 
 ```bash
-# Serve with the included no-cache Python server
+# Serve with the included Python server (supports SQLite & Cloud Run API)
 python3 server.py
 
-# Or open index.html directly in a browser
+# Or open index.html directly in any browser
 open index.html
 ```
 
-For mobile testing over local network or tunnel:
+For mobile testing over local network:
 ```bash
 # Using localtunnel
-npx -y localtunnel --port 8000
+npx -y localtunnel --port 8080
 ```
 
 ---
 
 ## 🚀 Deploying to Google Cloud Run
 
-The app is containerised with **nginx**. The repository has a GitHub Actions workflow that automatically builds and deploys to Cloud Run on every push to `main`.
+The app is containerized with Python 3.11 and Google Cloud Storage persistence. Continuous Deployment is configured via **GitHub Actions** (`.github/workflows/deploy.yml`) on every push to `main`.
 
-### Required GitHub Secrets
+### Continuous Deployment (GitHub Actions)
 
-| Secret | Description |
-|---|---|
-| `GCLOUD_PROJECT` | Your Google Cloud project ID |
-| `GCLOUD_SA_KEY` | Service account JSON key (base64 or raw) |
-| `CLOUD_RUN_SERVICE` | Name of your Cloud Run service |
-| `CLOUD_RUN_REGION` | Cloud Run region (e.g. `us-central1`) |
+When code is pushed to `main`, GitHub Actions automatically:
+1. Authenticates to Google Cloud via Keyless OIDC (Workload Identity).
+2. Builds and pushes the Docker container to Google Container Registry (`gcr.io/star-jar-505202/star-jar`).
+3. Deploys the service to **Cloud Run** in `us-central1` with unauthenticated access enabled.
 
-### Deploy Steps
+### Manual gcloud Deployment (Alternative)
 
-1. Set all four secrets in your GitHub repo → **Settings → Secrets → Actions**.
-2. Push to `main` — the workflow builds the Docker image, pushes it to Container Registry, and deploys to Cloud Run automatically.
+```bash
+gcloud run deploy star-jar \
+  --source . \
+  --platform managed \
+  --region us-central1 \
+  --project star-jar-505202 \
+  --allow-unauthenticated
+```
 
 ---
 
@@ -76,29 +73,29 @@ The app is containerised with **nginx**. The repository has a GitHub Actions wor
 
 ```
 star-jar/
-├── index.html          # Main app shell
+├── index.html          # Main app shell, glassmorphic UI, drawers, modals
 ├── css/
-│   └── style.css       # All styles (glassmorphism, animations, responsive)
+│   └── style.css       # Design system tokens, glassmorphism, responsive styles
 ├── js/
-│   ├── app.js          # Main app logic (modals, shake sensor, draw engine)
-│   ├── main.js         # Alternate entry point (mirrors app.js)
-│   ├── jar.js          # JarEngine — physics, star rendering, shake animation
-│   └── storage.js      # LocalStorage CRUD for activities
+│   ├── app.js          # Standalone unified production bundle
+│   ├── main.js         # Core application lifecycle & event handlers
+│   ├── jar.js          # JarEngine — Canvas 2D physics & particle simulation
+│   └── storage.js      # Multi-jar state management, auth & sync engine
 ├── assets/
-│   ├── stars/          # Colored star PNG assets
+│   ├── stars/          # Origami star PNG assets (pink, blue, yellow, etc.)
 │   ├── icon-180.png    # iOS home screen icon
 │   ├── icon-192.png    # PWA icon
 │   └── icon-512.png    # PWA splash icon
-├── manifest.json       # PWA manifest
-├── server.py           # Local dev server with strict no-cache headers
-├── Dockerfile          # nginx container for Cloud Run
+├── manifest.json       # Progressive Web App manifest
+├── server.py           # Python HTTP server with CORS, SQLite & GCS persistence
+├── Dockerfile          # Cloud Run container definition
 └── .github/
     └── workflows/
-        └── deploy.yml  # Auto-deploy to Cloud Run on push to main
+        └── deploy.yml  # Automated CI/CD deployment to Google Cloud Run
 ```
 
 ---
 
-## License
+## 📄 License
 
 MIT © 2026 Makaela Harrell
