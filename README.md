@@ -9,7 +9,7 @@ A whimsical, interactive web application that lets you shake your phone (or clic
 - **Multi-Jar Management & Switching** — Create multiple custom Star Jars for distinct purposes (e.g. *Focus & Productivity*, *Creative Sparks*, *Quick Wins*, *Fun & Games*, or *Custom Blank*). Switch between jars seamlessly anytime.
 - **Isolated History & Prompt Sets** — Each jar maintains its own separate pool of folded stars, completed history, and drawer archives.
 - **Shake to Draw** — Shake your iPhone or Android phone naturally to rattle the stars and pop open an activity prompt instantly.
-- **Calibrated Motion Sensitivity** — Tuned with +25% increased sensitivity for ultra-responsive, gentle wrist shakes while preserving intelligent touch suppression so tapping buttons, tabs, or menus never triggers accidental shakes.
+- **Calibrated Motion Sensitivity** — Tuned with +30% increased sensitivity for ultra-responsive, effortless gentle wrist shakes while preserving intelligent touch suppression so tapping buttons, tabs, or menus never triggers accidental shakes.
 - **Real-Time 2D Physics & Particle Engine** — Stars drop through the neck with realistic gravity, bounce off glass boundaries, and stack naturally at the bottom.
 - **Custom Star Creation** — Fold new stars into any active jar with title, time duration, mood/category (Creative, Productive, Fun, Both), star color, and optional link.
 - **Offline & Cloud Sync Resilient** — Works seamlessly offline, as an installed PWA, via local files, or synced in the cloud with user account persistence.
@@ -22,7 +22,7 @@ A whimsical, interactive web application that lets you shake your phone (or clic
 
 On visiting from a mobile device:
 1. Tap **Enable Motion** when prompted to grant iOS / Android accelerometer permissions.
-2. Shake your phone naturally with a gentle wrist motion — the jar rattles and your activity star is drawn instantly with enhanced 25% higher responsiveness.
+2. Shake your phone naturally with a gentle wrist motion — the jar rattles and your activity star is drawn instantly with enhanced 30% higher responsiveness.
 3. Tapping any buttons, modals, or drawers automatically locks the motion sensor for 2.5 seconds to prevent false triggers from screen taps.
 
 ---
