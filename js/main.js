@@ -653,11 +653,11 @@ document.addEventListener('DOMContentLoaded', () => {
   let reversalCount = 0;
   let lastReversalTime = 0;
 
-  // Calibrated for ultra-responsive gentle wrist shake (+30% sensitivity increase) with strict UI touch suppression
-  const MIN_DELTA_NOISE_GATE = 0.63;       // Highly responsive to gentle wrist motion (30% more sensitive)
-  const MOTION_TRIGGER_ENERGY = 1.47;      // Sensitive threshold: quick gentle shake (30% lower energy threshold)
+  // Calibrated for ultra-responsive gentle wrist shake (+15% sensitivity increase) with strict UI touch suppression
+  const MIN_DELTA_NOISE_GATE = 0.54;       // Ultra-responsive to gentle wrist motion (15% more sensitive)
+  const MOTION_TRIGGER_ENERGY = 1.25;      // Effortless threshold: quick light shake (15% lower energy threshold)
   const MOTION_DECAY = 0.92;               // Smooth energy accumulation across frames
-  const REVERSAL_THRESHOLD = 0.42;         // Sensitive directional change threshold (30% more sensitive)
+  const REVERSAL_THRESHOLD = 0.36;         // Sensitive directional change threshold (15% more sensitive)
   const DRAW_COOLDOWN_MS = 2500;
 
   const mobileSensorPill = document.getElementById('mobileSensorPill');
@@ -738,7 +738,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (frameMag < MIN_DELTA_NOISE_GATE) {
       accumulatedMotion *= MOTION_DECAY;
-      if (accumulatedMotion < 0.07) accumulatedMotion = 0;
+      if (accumulatedMotion < 0.06) accumulatedMotion = 0;
       if (Date.now() - lastReversalTime > 700) reversalCount = 0;
       return;
     }
